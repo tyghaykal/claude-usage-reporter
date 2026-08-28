@@ -37,7 +37,7 @@ Everything the plugin does is plain, unminified JavaScript in this repository â€
 ## Install
 
 ```
-/plugin marketplace add tyghaykal/claude-usage
+/plugin marketplace add tyghaykal/claude-usage-reporter
 /plugin install claude-usage-reporter
 ```
 
@@ -243,7 +243,7 @@ that only read stdin and call into `src/`.
 
 ## Support
 
-Issues and questions: <https://github.com/tyghaykal/claude-usage/issues>
+Issues and questions: <https://github.com/tyghaykal/claude-usage-reporter/issues>
 
 Changes to what is captured or where it is sent are always called out in
 [CHANGELOG.md](CHANGELOG.md).

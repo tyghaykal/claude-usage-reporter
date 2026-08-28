@@ -4,10 +4,10 @@
   "description": "Reports per-prompt token usage to your terminal, or pushes it to an HTTP endpoint you control. No data leaves your machine until you configure one.",
   "author": {
     "name": "tyghaykal",
-    "url": "https://github.com/tyghaykal/claude-usage"
+    "url": "https://github.com/tyghaykal/claude-usage-reporter"
   },
-  "homepage": "https://github.com/tyghaykal/claude-usage",
-  "repository": "https://github.com/tyghaykal/claude-usage",
+  "homepage": "https://github.com/tyghaykal/claude-usage-reporter",
+  "repository": "https://github.com/tyghaykal/claude-usage-reporter",
   "license": "MIT",
   "keywords": ["usage", "tokens", "cost", "reporting", "telemetry"],
   "commands": ["./commands/usage-config.md"],

@@ -2,7 +2,7 @@
   "name": "claude-usage-reporter",
   "owner": {
     "name": "tyghaykal",
-    "url": "https://github.com/tyghaykal/claude-usage"
+    "url": "https://github.com/tyghaykal/claude-usage-reporter"
   },
   "metadata": {
     "description": "Per-prompt token usage reporting for Claude Code.",

@@ -7,10 +7,10 @@
   "engines": { "node": ">=18" },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tyghaykal/claude-usage"
+    "url": "https://github.com/tyghaykal/claude-usage-reporter"
   },
   "bugs": {
-    "url": "https://github.com/tyghaykal/claude-usage/issues"
+    "url": "https://github.com/tyghaykal/claude-usage-reporter/issues"
   },
   "scripts": {
     "test": "node --test tests/",
