@@ -6,6 +6,18 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-08-28
+
+### Fixed
+- **The plugin failed to load entirely on 0.1.0.** `plugin.json` declared
+  `hooks` and `commands` explicitly, but `hooks/hooks.json` and `commands/` are
+  auto-discovered by convention, so the manifest registered them a second time:
+  `Hook load failed: Duplicate hooks file detected`. Neither hook ran, which
+  means 0.1.0 captured nothing. Both fields are now omitted and the standard
+  directories do the work.
+
+No change to what is captured or where it is sent.
+
 ## [0.1.0] — 2026-08-28
 
 Initial release.
