@@ -1,0 +1,25 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+coverage/
+.nyc_output/
+
+# Example receiver output (may contain prompt text)
+examples/usage.jsonl
+
+# Local Claude Code / ruflo workspace state — may contain session and prompt
+# data, and is specific to one machine. Never publish.
+.claude/
+.claude-flow/
+.swarm/
+.agents/
+.mcp.json
+ruvector.db
+CLAUDE.md
+
+# OS noise
+.DS_Store

@@ -1,0 +1,14 @@
+{
+  "_comment": "Public API list price in USD per million tokens. Estimation only, never billing (FRD §16). Longest matching prefix wins. Update as Anthropic publishes new rates.",
+  "_updated": "2026-08-28",
+  "models": {
+    "claude-opus-5": { "input": 15, "cache_write": 18.75, "cache_read": 1.5, "output": 75 },
+    "claude-opus-4": { "input": 15, "cache_write": 18.75, "cache_read": 1.5, "output": 75 },
+    "claude-sonnet-5": { "input": 3, "cache_write": 3.75, "cache_read": 0.3, "output": 15 },
+    "claude-sonnet-4": { "input": 3, "cache_write": 3.75, "cache_read": 0.3, "output": 15 },
+    "claude-fable-5": { "input": 3, "cache_write": 3.75, "cache_read": 0.3, "output": 15 },
+    "claude-haiku-4-5": { "input": 1, "cache_write": 1.25, "cache_read": 0.1, "output": 5 },
+    "claude-3-7-sonnet": { "input": 3, "cache_write": 3.75, "cache_read": 0.3, "output": 15 },
+    "claude-3-5-haiku": { "input": 0.8, "cache_write": 1, "cache_read": 0.08, "output": 4 }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "claude-usage-reporter",
+  "version": "0.1.0",
+  "description": "Claude Code plugin that reports per-prompt token usage to your terminal or your own HTTP endpoint.",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tyghaykal/claude-usage"
+  },
+  "bugs": {
+    "url": "https://github.com/tyghaykal/claude-usage/issues"
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "coverage": "c8 --check-coverage --lines 100 --branches 100 --functions 100 --statements 100 node --test tests/"
+  },
+  "c8": {
+    "include": ["src/**/*.mjs"],
+    "reporter": ["text", "lcov"]
+  },
+  "devDependencies": {
+    "c8": "^10.1.3"
+  }
+}
