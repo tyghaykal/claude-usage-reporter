@@ -6,6 +6,18 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] — 2026-08-28
+
+### Fixed
+- **Every command the plugin told you to type was wrong.** Claude Code namespaces
+  plugin commands as `/<plugin>:<command>`, so the `/usage-config` printed by the
+  first-run notice, the terminal report, and the README returned
+  `Unknown command: /usage-config`. All of them now show the working form,
+  `/claude-usage-reporter:usage-config`, defined in one place so it cannot drift
+  from the real command again.
+
+No change to what is captured or where it is sent.
+
 ## [0.1.1] — 2026-08-28
 
 ### Fixed

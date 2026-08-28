@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Backing script for the `/usage-config` command. */
+/** Backing script for the `/claude-usage-reporter:usage-config` command. */
 
 import { runCli } from '../src/cli.mjs';
 

@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Per-prompt token usage reporting for Claude Code.",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "plugins": [
     {
       "name": "claude-usage-reporter",
       "source": "./",
       "description": "Reports per-prompt token usage to your terminal, or pushes it to an HTTP endpoint you control.",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "category": "monitoring",
       "keywords": ["usage", "tokens", "cost", "reporting"]
     }

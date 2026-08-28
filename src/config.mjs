@@ -11,6 +11,14 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+/**
+ * How the user actually types the config command. Claude Code namespaces plugin
+ * commands as `/<plugin>:<command>`, so the bare `/usage-config` does not
+ * resolve. Defined once here because it appears in the notice, the terminal
+ * report, and the command's own help.
+ */
+export const COMMAND = '/claude-usage-reporter:usage-config';
+
 export const AUTH_TYPES = ['None', 'Bearer', 'Basic', 'Header', 'Key Pair'];
 export const DISPLAY_MODES = ['auto', 'always', 'off'];
 export const PROMPT_MODES = ['full', 'none'];

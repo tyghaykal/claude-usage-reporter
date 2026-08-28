@@ -3,6 +3,7 @@
  * Neither ever includes an auth credential — see NFR "Safety".
  */
 
+import { COMMAND } from './config.mjs';
 import { estimateCost } from './pricing.mjs';
 
 /** Applies `usagePromptMode`: `full`, `none`, or `truncate:N`. */
@@ -58,7 +59,7 @@ export function formatReport({ project, datetime, tokens, model, session, endpoi
   }
 
   if (!endpointConfigured) {
-    lines.push('', 'No usage endpoint configured — set one to auto-report instead:', '  /usage-config set usageEndpoint <url>');
+    lines.push('', 'No usage endpoint configured — set one to auto-report instead:', `  ${COMMAND} set usageEndpoint <url>`);
   }
   return lines.join('\n');
 }
@@ -71,8 +72,10 @@ export const FIRST_RUN_NOTICE = [
   'the session id, and token counts (input / cache read / cache write / output).',
   '',
   'Nothing leaves this machine. Usage is printed to your terminal only, until you',
-  'set an endpoint yourself with:  /usage-config set usageEndpoint <url>',
-  'Once set, prompt text is POSTed to that endpoint, which is entirely yours to run.',
+  'set an endpoint yourself. Once set, prompt text is POSTed to that endpoint,',
+  'which is entirely yours to run.',
   '',
-  'Config: /usage-config    Disable terminal output: /usage-config set usageDisplay off',
+  `  Settings:  ${COMMAND}`,
+  `  Send:      ${COMMAND} set usageEndpoint <url>`,
+  `  Silence:   ${COMMAND} set usageDisplay off`,
 ].join('\n');

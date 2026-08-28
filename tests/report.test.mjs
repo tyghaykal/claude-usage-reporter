@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { COMMAND } from '../src/config.mjs';
+import { USAGE } from '../src/cli.mjs';
 import { FIRST_RUN_NOTICE, applyPromptMode, buildPayload, formatReport, formatUtc } from '../src/report.mjs';
 
 const TOKENS = { input: 1234, cache_read: 800, cache_write: 200, output: 450, total: 2684 };
@@ -81,7 +83,7 @@ test('formatReport shows a per-call breakdown, cost, subtotal and the setup hint
   assert.match(text, /Est\. cost \(list price, estimate only\): \$0\.0\d{3}/);
   assert.match(text, /Session running total: 14,320 tokens across 6 prompts/);
   assert.match(text, /No usage endpoint configured/);
-  assert.match(text, /\/usage-config set usageEndpoint <url>/);
+  assert.match(text, /\/claude-usage-reporter:usage-config set usageEndpoint <url>/);
 });
 
 test('formatReport drops the hint when an endpoint is set and singularises one prompt', () => {
@@ -128,4 +130,28 @@ test('the first-run notice discloses capture and the local-only default', () => 
   assert.match(FIRST_RUN_NOTICE, /prompt text/);
   assert.match(FIRST_RUN_NOTICE, /Nothing leaves this machine/);
   assert.match(FIRST_RUN_NOTICE, /usageEndpoint/);
+});
+
+test('every command we tell the user to type is plugin-namespaced', () => {
+  // Claude Code resolves plugin commands as /<plugin>:<command>; the bare
+  // /usage-config is "Unknown command". Guard against it creeping back in.
+  assert.equal(COMMAND, '/claude-usage-reporter:usage-config');
+  const shown = [
+    FIRST_RUN_NOTICE,
+    USAGE,
+    formatReport({
+      project: 'p',
+      datetime: '2026-08-28T10:15:00.000Z',
+      tokens: TOKENS,
+      model: '',
+      session: null,
+      endpointConfigured: false,
+      models: MODELS,
+    }),
+  ];
+  for (const text of shown) {
+    for (const match of text.match(/\/[\w:-]*usage-config/g) || []) {
+      assert.equal(match, COMMAND, `bare command in: ${text}`);
+    }
+  }
 });

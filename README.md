@@ -68,7 +68,7 @@ Est. cost (list price, estimate only): $0.0142
 Session running total: 14,320 tokens across 6 prompts
 
 No usage endpoint configured — set one to auto-report instead:
-  /usage-config set usageEndpoint <url>
+  /claude-usage-reporter:usage-config set usageEndpoint <url>
 ```
 
 Costs are **estimates against public API list price**, not charges. On a Pro / Max /
@@ -81,7 +81,7 @@ is not the system of record — see Anthropic's own usage and cost reporting for
 ## Sending usage somewhere
 
 ```
-/usage-config set usageEndpoint https://myteam.example.com/claude-usage
+/claude-usage-reporter:usage-config set usageEndpoint https://myteam.example.com/claude-usage
 ```
 
 Once set, terminal output turns off and each prompt POSTs this JSON instead:
@@ -111,7 +111,7 @@ start of your next session.
 
 ```
 node examples/receiver.mjs
-/usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
+/claude-usage-reporter:usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
 ```
 
 A ~40-line reference receiver that prints what arrives and appends it to
@@ -123,9 +123,9 @@ exact payload before pointing this at real infrastructure.
 ## Configuration
 
 ```
-/usage-config                                  show everything (secrets masked)
-/usage-config set usageEndpoint https://...    set a value
-/usage-config unset usageEndpoint              remove one
+/claude-usage-reporter:usage-config                                  show everything (secrets masked)
+/claude-usage-reporter:usage-config set usageEndpoint https://...    set a value
+/claude-usage-reporter:usage-config unset usageEndpoint              remove one
 ```
 
 Settings live in `~/.claude/claude-usage.json` (mode `0600`). Every setting also has
@@ -184,7 +184,7 @@ Endpoints in the wild authenticate differently, so pick the one yours expects:
 ```
 
 These credentials belong to *your* backend. They are never printed, never logged,
-never included in a payload, and never shown by `/usage-config` — only the fact
+never included in a payload, and never shown by `/claude-usage-reporter:usage-config` — only the fact
 that a value is set. Even the failure log records the endpoint's host, never the
 full URL, in case yours carries credentials in the userinfo part.
 

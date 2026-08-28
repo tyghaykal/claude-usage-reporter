@@ -1,19 +1,20 @@
 /**
- * `/usage-config` implementation — inspect and edit settings without hand-editing
+ * Config command implementation — inspect and edit settings without hand-editing
  * JSON. Secret values are shown as `***set***` and never echoed back (FRD §12).
  */
 
 import { readFileSync } from 'node:fs';
-import { DEFAULTS, ENV_KEYS, SECRET_KEYS, configPath, loadConfig, maskConfig } from './config.mjs';
+import { COMMAND, DEFAULTS, ENV_KEYS, SECRET_KEYS, configPath, loadConfig, maskConfig } from './config.mjs';
 import { fsDefaults, readJson, writeJson } from './store.mjs';
 
 const KEYS = Object.keys(DEFAULTS);
 
 const USAGE = [
   'Usage:',
-  '  /usage-config                      show current settings (secrets masked)',
-  '  /usage-config set <key> <value>    set a setting',
-  '  /usage-config unset <key>          remove a setting',
+  `  ${COMMAND}`,
+  '      show current settings (secrets masked)',
+  `  ${COMMAND} set <key> <value>`,
+  `  ${COMMAND} unset <key>`,
   '',
   `Keys: ${KEYS.join(', ')}`,
 ].join('\n');

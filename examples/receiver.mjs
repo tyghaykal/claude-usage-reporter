@@ -9,9 +9,9 @@
  *   RECEIVER_TOKEN=secret node examples/receiver.mjs   # requires Bearer secret
  *
  * Then:
- *   /usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
- *   /usage-config set usageAuthType Bearer
- *   /usage-config set usageAuthToken secret
+ *   /claude-usage-reporter:usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
+ *   /claude-usage-reporter:usage-config set usageAuthType Bearer
+ *   /claude-usage-reporter:usage-config set usageAuthToken secret
  *
  * Records are appended to usage.jsonl next to this file.
  */
