@@ -38,22 +38,40 @@ Everything the plugin does is plain, unminified JavaScript in this repository �
 
 ```
 /plugin marketplace add tyghaykal/claude-usage-reporter
-/plugin install claude-usage-reporter
+/plugin install claude-usage-reporter@claude-usage-reporter
 ```
 
 Or from a local checkout:
 
 ```
-/plugin marketplace add /path/to/claude-usage
-/plugin install claude-usage-reporter
+/plugin marketplace add /path/to/claude-usage-reporter
+/plugin install claude-usage-reporter@claude-usage-reporter
 ```
 
 Requires Node 18+ (already present if you installed Claude Code via npm). No
 dependencies, no build step, no `settings.json` editing.
 
+Confirm it loaded — this is worth doing, since a plugin that fails to load still
+reports as installed:
+
+```
+claude plugin list     # look for: Status: ✔ enabled
+```
+
 On the first session after install you get a one-time notice describing exactly
 what is captured. Nothing is sent anywhere on that first turn, even if an endpoint
 is already configured.
+
+### Updating
+
+```
+/plugin marketplace update claude-usage-reporter
+/plugin install claude-usage-reporter@claude-usage-reporter
+```
+
+Versions are tagged in this repository, and [CHANGELOG.md](CHANGELOG.md) marks any
+change to what is captured or where it is sent with 🔍 so you can read it before
+upgrading.
 
 ---
 
@@ -106,6 +124,32 @@ Once set, terminal output turns off and each prompt POSTs this JSON instead:
 The POST happens in a detached background process, so a slow or dead endpoint can
 never delay your next prompt. Failed pushes are queued locally and retried at the
 start of your next session.
+
+### Check it before you rely on it
+
+Pushes happen in the background, so a misconfigured endpoint is silent — you find
+out by noticing no data ever arrived. `test-connection` makes it explicit:
+
+```
+/claude-usage-reporter:usage-config test-connection
+```
+
+```
+Endpoint: https://myteam.example.com/claude-usage
+Auth:     Header — sending X-API-Key
+
+OK — 204. The endpoint accepted a test record.
+It stored a zero-token entry; remove it if your backend keeps it.
+```
+
+On failure it prints the response body, which is normally what names the problem:
+
+```
+FAILED — HTTP 401.
+Response: {"error":"Missing X-API-Key header"}
+
+The endpoint rejected the credentials. Current usageAuthType is "None".
+```
 
 ### Try it locally first
 
@@ -244,11 +288,33 @@ de-duplication), `claude-usage-queue.jsonl` (failed pushes, capped at 500),
 
 ---
 
+## Troubleshooting
+
+**`claude plugin list` says `✘ failed to load`** — you are on 0.1.0. Update; see
+[CHANGELOG.md](CHANGELOG.md#011--2026-08-28).
+
+**`Unknown command: /usage-config`** — Claude Code namespaces plugin commands. The
+full name is `/claude-usage-reporter:usage-config`. Versions before 0.1.2 printed
+the short form, which never worked.
+
+**Nothing arrives at my endpoint** — run `test-connection`; it reports the status
+and the response body. Failures are also logged to `~/.claude/claude-usage.log`,
+and unsent records wait in `~/.claude/claude-usage-queue.jsonl`.
+
+**No terminal report appears** — with an endpoint configured that is expected:
+`usageDisplay` defaults to `auto`, which prints only while no endpoint is set. Use
+`always` to get both.
+
+**A turn is missing** — work done inside a subagent is excluded (see Known
+limitations), and a turn that produced no assistant response is not reported.
+
+---
+
 ## Development
 
 ```
 npm install
-npm test        # 104 tests, no network, no disk writes outside a temp dir
+npm test          # 111 tests, no network, no disk writes outside a temp dir
 npm run coverage  # enforced at 100% lines / branches / functions / statements
 ```
 
