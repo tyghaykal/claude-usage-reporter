@@ -4,7 +4,9 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { COMMAND, DEFAULTS, ENV_KEYS, SECRET_KEYS, configPath, loadConfig, maskConfig } from './config.mjs';
+import { COMMAND, DEFAULTS, ENV_KEYS, SECRET_KEYS, authHeaders, configPath, loadConfig, maskConfig } from './config.mjs';
+import { deriveProject } from './project.mjs';
+import { postUsage } from './sender.mjs';
 import { fsDefaults, readJson, writeJson } from './store.mjs';
 
 const KEYS = Object.keys(DEFAULTS);
@@ -15,6 +17,8 @@ const USAGE = [
   '      show current settings (secrets masked)',
   `  ${COMMAND} set <key> <value>`,
   `  ${COMMAND} unset <key>`,
+  `  ${COMMAND} test-connection`,
+  '      POST one zero-token record to the configured endpoint and report the result',
   '',
   `Keys: ${KEYS.join(', ')}`,
 ].join('\n');
@@ -38,9 +42,68 @@ function show(config, warnings, path, env) {
 }
 
 /**
- * @returns {{text: string, code: number}}
+ * Sends one real-shaped record with zero tokens, so the user can verify auth and
+ * schema acceptance without waiting for a prompt to complete. This is the only
+ * place the plugin talks to the network on demand rather than after a turn.
  */
-export function runCli(argv, { env = process.env, readFile = readFileSync, fs = fsDefaults } = {}) {
+async function testConnection({ env, readFile, post, cwd, now }) {
+  const { config, warnings } = loadConfig({ env, readFile });
+  const lines = warnings.map((w) => `warning: ${w}`);
+
+  if (!config.usageEndpoint) {
+    lines.push('No usageEndpoint set — there is nothing to test.', '', `Set one with:  ${COMMAND} set usageEndpoint <url>`);
+    return { text: lines.join('\n'), code: 1 };
+  }
+
+  const { headers, warnings: authWarnings } = authHeaders(config);
+  lines.push(...authWarnings.map((w) => `warning: ${w}`));
+
+  const names = Object.keys(headers);
+  lines.push(
+    `Endpoint: ${config.usageEndpoint}`,
+    `Auth:     ${config.usageAuthType}${names.length ? ` — sending ${names.join(', ')}` : ' — sending no auth header'}`,
+    '',
+  );
+
+  const result = await post({
+    url: config.usageEndpoint,
+    headers,
+    timeoutMs: config.usageTimeoutMs,
+    payload: {
+      project: deriveProject(cwd),
+      datetime: now().toISOString(),
+      prompt: 'connection test from claude-usage-reporter',
+      session_id: 'test-connection',
+      tokens: { input: 0, cache_read: 0, cache_write: 0, output: 0, total: 0 },
+    },
+  });
+
+  if (result.ok) {
+    lines.push(`OK — ${result.status}. The endpoint accepted a test record.`, 'It stored a zero-token entry; remove it if your backend keeps it.');
+    return { text: lines.join('\n'), code: 0 };
+  }
+
+  lines.push(`FAILED — ${result.error}.`);
+  if (result.body) lines.push(`Response: ${result.body}`);
+  if (result.status === 401 || result.status === 403) {
+    lines.push('', `The endpoint rejected the credentials. Current usageAuthType is "${config.usageAuthType}".`, 'The response above usually names the header it wants.');
+  } else if (result.status === 0) {
+    lines.push('', 'No HTTP response — check the URL, that the service is running, and usageTimeoutMs.');
+  }
+  return { text: lines.join('\n'), code: 1 };
+}
+
+/**
+ * @returns {Promise<{text: string, code: number}>}
+ */
+export async function runCli(argv, {
+  env = process.env,
+  readFile = readFileSync,
+  fs = fsDefaults,
+  post = postUsage,
+  cwd = process.cwd(),
+  now = () => new Date(),
+} = {}) {
   const path = configPath(env);
   const [command, key, ...rest] = argv;
 
@@ -48,6 +111,8 @@ export function runCli(argv, { env = process.env, readFile = readFileSync, fs = 
     const { config, warnings } = loadConfig({ env, readFile });
     return { text: show(config, warnings, path, env), code: 0 };
   }
+
+  if (command === 'test-connection') return testConnection({ env, readFile, post, cwd, now });
 
   if (command !== 'set' && command !== 'unset') {
     return { text: `Unknown command "${command}".\n\n${USAGE}`, code: 1 };

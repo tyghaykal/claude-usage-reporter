@@ -3,6 +3,6 @@
 
 import { runCli } from '../src/cli.mjs';
 
-const { text, code } = runCli(process.argv.slice(2));
+const { text, code } = await runCli(process.argv.slice(2));
 process.stdout.write(`${text}\n`);
 process.exitCode = code;

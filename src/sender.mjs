@@ -26,7 +26,15 @@ export async function postUsage({ url, headers = {}, payload, timeoutMs = 5000, 
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (response.ok) return { ok: true, status: response.status };
-    return { ok: false, status: response.status, error: `HTTP ${response.status}` };
+    // The body usually says why (e.g. {"error":"Missing X-API-Key header"}),
+    // which is what makes `test-connection` actionable. Capped, and never logged.
+    let body = '';
+    try {
+      body = (await response.text()).trim().slice(0, 300);
+    } catch {
+      // Some responses have no readable body; the status alone still reports.
+    }
+    return { ok: false, status: response.status, error: `HTTP ${response.status}`, body };
   } catch (error) {
     return { ok: false, status: 0, error: error && error.message ? error.message : String(error) };
   }

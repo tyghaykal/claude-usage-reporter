@@ -126,7 +126,23 @@ exact payload before pointing this at real infrastructure.
 /claude-usage-reporter:usage-config                                  show everything (secrets masked)
 /claude-usage-reporter:usage-config set usageEndpoint https://...    set a value
 /claude-usage-reporter:usage-config unset usageEndpoint              remove one
+/claude-usage-reporter:usage-config test-connection                  check the endpoint accepts a record
 ```
+
+`test-connection` POSTs one real-shaped record with zero tokens, using whatever
+auth you have configured, and reports what came back — including the response
+body, which is usually what tells you which header the endpoint wants:
+
+```
+Endpoint: http://localhost:8080/api/usage
+Auth:     None — sending no auth header
+
+FAILED — HTTP 401.
+Response: {"error":"Missing X-API-Key header"}
+```
+
+It is the only command that talks to the network on demand. Note that a success
+leaves a zero-token record on your backend.
 
 Settings live in `~/.claude/claude-usage.json` (mode `0600`). Every setting also has
 an environment variable, for CI or scripted setups; **the config file wins** when

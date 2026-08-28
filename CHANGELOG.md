@@ -6,6 +6,21 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] — 2026-08-28
+
+### Added
+- `test-connection` subcommand: POSTs one real-shaped record with zero tokens to
+  the configured endpoint and reports the result, including the response body —
+  which is normally what names the header a rejecting endpoint expects. A
+  success leaves a zero-token record on the receiving backend.
+
+### Changed
+- A failed push now captures up to 300 characters of the response body, so
+  `test-connection` can show why. The body is reported on demand only; the
+  failure log still records the endpoint host and status, never the body.
+
+No change to what is captured during normal operation, or where it is sent.
+
 ## [0.1.2] — 2026-08-28
 
 ### Fixed

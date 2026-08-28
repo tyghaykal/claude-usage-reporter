@@ -27,13 +27,33 @@ test('postUsage sends JSON with the supplied auth headers', async () => {
   assert.ok(seen.options.signal);
 });
 
-test('postUsage reports a non-2xx response as a failure', async () => {
-  const result = await postUsage({
+test('postUsage reports a non-2xx response as a failure, with the body when readable', async () => {
+  const withBody = await postUsage({
+    url: 'https://x/',
+    payload: {},
+    fetchImpl: async () => ({ ok: false, status: 401, text: async () => '  {"error":"Missing X-API-Key header"}\n' }),
+  });
+  assert.deepEqual(withBody, {
+    ok: false,
+    status: 401,
+    error: 'HTTP 401',
+    body: '{"error":"Missing X-API-Key header"}',
+  });
+
+  const long = await postUsage({
+    url: 'https://x/',
+    payload: {},
+    fetchImpl: async () => ({ ok: false, status: 500, text: async () => 'x'.repeat(1000) }),
+  });
+  assert.equal(long.body.length, 300);
+
+  // A response with no readable body still reports the status.
+  const bodiless = await postUsage({
     url: 'https://x/',
     payload: {},
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
-  assert.deepEqual(result, { ok: false, status: 503, error: 'HTTP 503' });
+  assert.deepEqual(bodiless, { ok: false, status: 503, error: 'HTTP 503', body: '' });
 });
 
 test('postUsage turns any thrown value into a failure result', async () => {
