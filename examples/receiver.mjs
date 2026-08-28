@@ -40,8 +40,9 @@ createServer((req, res) => {
     try {
       const record = JSON.parse(body);
       appendFileSync(OUT, `${JSON.stringify(record)}\n`);
+      const mark = record.error ? `  ERROR ${record.error_type || 'unknown'}` : '';
       console.log(
-        `${record.datetime}  ${record.project}  ${record.tokens.total} tokens  ${JSON.stringify(record.prompt).slice(0, 60)}`,
+        `${record.datetime}  ${record.project}  ${record.tokens.total} tokens${mark}  ${JSON.stringify(record.prompt).slice(0, 60)}`,
       );
       res.writeHead(202).end('ok\n');
     } catch {

@@ -6,6 +6,9 @@
 import { COMMAND } from './config.mjs';
 import { estimateCost } from './pricing.mjs';
 
+const ERROR_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
+const ERROR_DETAILS_LIMIT = 300;
+
 /** Applies `usagePromptMode`: `full`, `none`, or `truncate:N`. */
 export function applyPromptMode(prompt, mode) {
   if (mode === 'none') return '';
@@ -15,7 +18,19 @@ export function applyPromptMode(prompt, mode) {
   return prompt.length > limit ? `${prompt.slice(0, limit)}…` : prompt;
 }
 
-export function buildPayload({ project, datetime, prompt, sessionId, tokens, model, user, promptMode }) {
+/**
+ * Normalises a turn-failure mark. Success is represented by omitting it
+ * entirely, so existing backends keep seeing the original payload shape.
+ */
+export function errorMark(error) {
+  if (!error) return null;
+  const type = typeof error.type === 'string' && ERROR_TYPE.test(error.type) ? error.type : 'unknown';
+  const raw = typeof error.details === 'string' ? error.details : '';
+  const details = raw.slice(0, ERROR_DETAILS_LIMIT);
+  return details ? { type, details } : { type };
+}
+
+export function buildPayload({ project, datetime, prompt, sessionId, tokens, model, user, promptMode, error }) {
   const payload = {
     project,
     datetime,
@@ -31,6 +46,12 @@ export function buildPayload({ project, datetime, prompt, sessionId, tokens, mod
   };
   if (model) payload.model = model;
   if (user) payload.user = user;
+  const mark = errorMark(error);
+  if (mark) {
+    payload.error = true;
+    payload.error_type = mark.type;
+    if (mark.details) payload.error_details = mark.details;
+  }
   return payload;
 }
 
@@ -41,12 +62,17 @@ export function formatUtc(iso) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 }
 
-export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models }) {
+export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models, error }) {
   const lines = [
     `[${project}] ${formatUtc(datetime)}${model ? ` · ${model}` : ''}`,
     `Tokens — input: ${n(tokens.input)} | cache read: ${n(tokens.cache_read)} | ` +
       `cache write: ${n(tokens.cache_write)} | output: ${n(tokens.output)} | total: ${n(tokens.total)}`,
   ];
+
+  const mark = errorMark(error);
+  if (mark) {
+    lines.push(`Error: ${mark.type}${mark.details ? ` — ${mark.details}` : ''}`);
+  }
 
   const cost = estimateCost(model, tokens, models);
   if (cost !== null) lines.push(`Est. cost (list price, estimate only): $${cost.toFixed(4)}`);

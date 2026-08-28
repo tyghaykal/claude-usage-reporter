@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SENDER_SCRIPT, handle, handleSessionStart, handleStop } from '../src/handler.mjs';
+import { SENDER_SCRIPT, handle, handleSessionEnd, handleSessionStart, handleStop, handleStopFailure } from '../src/handler.mjs';
 import { CONFIG, LOG, QUEUE, STATE, USAGE_A, env, fakeFs, fakeReader, transcript } from './helpers.mjs';
 
 const TRANSCRIPT = '/session.jsonl';
@@ -27,6 +27,21 @@ function deps({ settings, files = {}, entries = transcript({ usages: [USAGE_A] }
 }
 
 const STOP = { hook_event_name: 'Stop', transcript_path: TRANSCRIPT, cwd: '/work/my-repo', session_id: 's1' };
+const STOP_FAILURE = {
+  hook_event_name: 'StopFailure',
+  transcript_path: TRANSCRIPT,
+  cwd: '/work/my-repo',
+  session_id: 's1',
+  error: 'rate_limit',
+  error_details: 'retry in 2s',
+};
+const SESSION_END = {
+  hook_event_name: 'SessionEnd',
+  transcript_path: TRANSCRIPT,
+  cwd: '/work/my-repo',
+  session_id: 's1',
+  reason: 'prompt_input_exit',
+};
 
 test('the sender script path resolves to the shipped binary', () => {
   assert.match(SENDER_SCRIPT, /bin\/send\.mjs$/);
@@ -36,6 +51,8 @@ test('handle dispatches on the hook event and ignores anything else', () => {
   const d = deps();
   assert.ok(handle({ hook_event_name: 'SessionStart' }, d).suppressOutput);
   assert.ok(handle(STOP, d).systemMessage);
+  assert.ok(handle(STOP_FAILURE, deps()).systemMessage);
+  assert.ok(handle(SESSION_END, deps()).systemMessage);
   assert.deepEqual(handle({ hook_event_name: 'PreToolUse' }, d), { suppressOutput: true });
 });
 
@@ -142,6 +159,111 @@ test('Stop stays quiet when there is no turn or no usage to report', () => {
   assert.equal(handleStop(STOP, deps({ entries: transcript({ usages: [] }) })).systemMessage, undefined);
 });
 
+test('StopFailure still submits used tokens and marks the payload as an error', () => {
+  const dispatched = [];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
+  const result = handleStopFailure(STOP_FAILURE, d);
+  assert.equal(result.systemMessage, undefined);
+  assert.equal(dispatched.length, 1);
+  assert.deepEqual(dispatched[0].records[0].tokens, {
+    input: 100,
+    cache_read: 800,
+    cache_write: 200,
+    output: 50,
+    total: 1150,
+  });
+  assert.equal(dispatched[0].records[0].error, true);
+  assert.equal(dispatched[0].records[0].error_type, 'rate_limit');
+  assert.equal(dispatched[0].records[0].error_details, 'retry in 2s');
+});
+
+test('a successful Stop payload has no error fields', () => {
+  const dispatched = [];
+  handleStop(STOP, deps({ settings: { usageEndpoint: ENDPOINT }, dispatched }));
+  assert.equal('error' in dispatched[0].records[0], false);
+  assert.equal('error_type' in dispatched[0].records[0], false);
+});
+
+test('StopFailure reports even when the turn produced no tokens', () => {
+  const dispatched = [];
+  const d = deps({
+    settings: { usageEndpoint: ENDPOINT, usageDisplay: 'always' },
+    entries: transcript({ usages: [] }),
+    dispatched,
+  });
+  const { systemMessage } = handleStopFailure({ ...STOP_FAILURE, error: 'authentication_failed', error_details: undefined }, d);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].tokens.total, 0);
+  assert.equal(dispatched[0].records[0].error, true);
+  assert.equal(dispatched[0].records[0].error_type, 'authentication_failed');
+  assert.equal('error_details' in dispatched[0].records[0], false);
+  assert.match(systemMessage, /Error: authentication_failed/);
+});
+
+test('StopFailure with an empty transcript still sends a zero-token error mark', () => {
+  const dispatched = [];
+  handleStopFailure(
+    { ...STOP_FAILURE, error: 'server_error', prompt_id: 'p9' },
+    deps({ settings: { usageEndpoint: ENDPOINT }, entries: [], dispatched }),
+  );
+  assert.equal(dispatched[0].records[0].tokens.total, 0);
+  assert.equal(dispatched[0].records[0].error_type, 'server_error');
+  assert.equal(dispatched[0].records[0].session_id, 's1');
+});
+
+test('StopFailure with no session or prompt id still synthesises a record', () => {
+  const dispatched = [];
+  handleStopFailure(
+    { hook_event_name: 'StopFailure', transcript_path: TRANSCRIPT, error: 'unknown' },
+    deps({ settings: { usageEndpoint: ENDPOINT }, entries: [], dispatched }),
+  );
+  assert.equal(dispatched[0].records[0].session_id, '');
+  assert.equal(dispatched[0].records[0].tokens.total, 0);
+  assert.equal(dispatched[0].records[0].error, true);
+  assert.equal(dispatched[0].records[0].error_type, 'unknown');
+});
+
+test('StopFailure sanitises an unknown error type', () => {
+  const dispatched = [];
+  handleStopFailure(
+    { ...STOP_FAILURE, error: 'not a type', error_details: 'x' },
+    deps({ settings: { usageEndpoint: ENDPOINT }, dispatched }),
+  );
+  assert.equal(dispatched[0].records[0].error_type, 'unknown');
+});
+
+test('the first run never transmits a StopFailure either', () => {
+  const dispatched = [];
+  const result = handleStopFailure(STOP_FAILURE, deps({ settings: { usageEndpoint: ENDPOINT }, state: {}, dispatched }));
+  assert.deepEqual(dispatched, []);
+  assert.match(result.systemMessage, /Nothing leaves this machine/);
+});
+
+test('SessionEnd submits leftover unreported usage marked interrupted', () => {
+  const dispatched = [];
+  handleSessionEnd(SESSION_END, deps({ settings: { usageEndpoint: ENDPOINT }, dispatched }));
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].error, true);
+  assert.equal(dispatched[0].records[0].error_type, 'interrupted');
+  assert.equal(dispatched[0].records[0].error_details, 'prompt_input_exit');
+  assert.equal(dispatched[0].records[0].tokens.total, 1150);
+});
+
+test('SessionEnd does not resend a turn Stop already reported', () => {
+  const dispatched = [];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
+  handleStop(STOP, d);
+  handleSessionEnd(SESSION_END, d);
+  assert.equal(dispatched.length, 1);
+  assert.equal('error' in dispatched[0].records[0], false);
+});
+
+test('SessionEnd stays quiet when there is no leftover usage', () => {
+  const dispatched = [];
+  assert.equal(handleSessionEnd(SESSION_END, deps({ entries: [], dispatched })).systemMessage, undefined);
+  assert.deepEqual(dispatched, []);
+});
+
 test('a repeated Stop for the same turn is reported only once', () => {
   const dispatched = [];
   const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
@@ -149,6 +271,15 @@ test('a repeated Stop for the same turn is reported only once', () => {
   handleStop(STOP, d);
   assert.equal(dispatched.length, 1);
   assert.equal(JSON.parse(d.fs.files.get(STATE)).lastTurn, 's1:p1');
+});
+
+test('StopFailure and SessionEnd de-duplicate the same turn', () => {
+  const dispatched = [];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
+  handleStopFailure(STOP_FAILURE, d);
+  handleSessionEnd(SESSION_END, d);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].error_type, 'rate_limit');
 });
 
 test('a turn without a promptId still de-duplicates', () => {

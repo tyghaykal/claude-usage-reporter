@@ -12,7 +12,7 @@ import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
 import { dispatch } from './sender.mjs';
 import { appendLog, drain, fsDefaults, readJson, writeJson } from './store.mjs';
-import { extractTurn, readTranscript, sessionSummary } from './transcript.mjs';
+import { EMPTY_TOKENS, extractTurn, readTranscript, sessionSummary } from './transcript.mjs';
 
 export const SENDER_SCRIPT = fileURLToPath(new URL('../bin/send.mjs', import.meta.url));
 
@@ -43,32 +43,39 @@ function consumeNotice(deps, env) {
   return { notice: FIRST_RUN_NOTICE, state, path };
 }
 
-export function handleSessionStart(input, overrides = {}) {
-  const deps = defaults(overrides);
-  const { config, warnings } = loadConfig({ env: deps.env, readFile: deps.readFile });
-  const { notice } = consumeNotice(deps, deps.env);
-
-  // Flush anything that failed to send in an earlier session (FRD §14 Q3).
-  if (config.usageEndpoint && config.usageRetry && !notice) {
-    const pending = drain(queuePath(deps.env), deps.fs, { clear: false });
-    if (pending.length) {
-      deps.dispatchImpl([], { script: deps.senderScript, env: deps.env });
-    }
-  }
-  return output(join([notice, ...warnings]));
+function emptyTurn(input) {
+  return {
+    prompt: '',
+    tokens: { ...EMPTY_TOKENS },
+    model: '',
+    sessionId: input.session_id || '',
+    cwd: input.cwd || '',
+    promptId: input.prompt_id || '',
+  };
 }
 
-export function handleStop(input, overrides = {}) {
+/**
+ * Shared capture path for Stop / StopFailure / SessionEnd.
+ *
+ * `skipEmpty` keeps a successful Stop (and a clean SessionEnd) from sending a
+ * zero-token record. StopFailure still reports even with no tokens, because
+ * the error mark itself is the signal — an auth failure often never produced
+ * usage.
+ */
+function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmptyTurn = false } = {}) {
   const deps = defaults(overrides);
   const { config, warnings } = loadConfig({ env: deps.env, readFile: deps.readFile });
   const { notice, state, path: stateFile } = consumeNotice(deps, deps.env);
 
   const entries = readTranscript(input.transcript_path, deps.readFile);
-  const turn = extractTurn(entries);
-  if (!turn || turn.tokens.total === 0) return output(join([notice, ...warnings]));
+  const turn = extractTurn(entries) || (allowEmptyTurn ? emptyTurn(input) : null);
+  if (!turn) return output(join([notice, ...warnings]));
+  if (skipEmpty && turn.tokens.total === 0) return output(join([notice, ...warnings]));
 
   // Stop can fire more than once for the same turn; report it only once.
-  const turnKey = `${turn.sessionId}:${turn.promptId || turn.tokens.total}`;
+  // Stop and StopFailure are mutually exclusive per turn, but SessionEnd may
+  // still see leftover usage from an unreported (interrupted) last prompt.
+  const turnKey = `${turn.sessionId || input.session_id || ''}:${turn.promptId || turn.tokens.total}`;
   if (state.lastTurn === turnKey) return output(join([notice, ...warnings]));
   writeJson(stateFile, { ...state, noticeShown: true, lastTurn: turnKey }, deps.fs);
 
@@ -83,6 +90,7 @@ export function handleStop(input, overrides = {}) {
     model: turn.model,
     user: config.usageUser,
     promptMode: config.usagePromptMode,
+    error,
   });
 
   const messages = [notice, ...warnings];
@@ -106,10 +114,47 @@ export function handleStop(input, overrides = {}) {
         session: sessionSummary(entries),
         endpointConfigured: Boolean(config.usageEndpoint),
         models: deps.models || loadPricing(),
+        error,
       }),
     );
   }
   return output(join(messages));
+}
+
+export function handleSessionStart(input, overrides = {}) {
+  const deps = defaults(overrides);
+  const { config, warnings } = loadConfig({ env: deps.env, readFile: deps.readFile });
+  const { notice } = consumeNotice(deps, deps.env);
+
+  // Flush anything that failed to send in an earlier session (FRD §14 Q3).
+  if (config.usageEndpoint && config.usageRetry && !notice) {
+    const pending = drain(queuePath(deps.env), deps.fs, { clear: false });
+    if (pending.length) {
+      deps.dispatchImpl([], { script: deps.senderScript, env: deps.env });
+    }
+  }
+  return output(join([notice, ...warnings]));
+}
+
+export function handleStop(input, overrides = {}) {
+  return reportTurn(input, overrides, { skipEmpty: true });
+}
+
+export function handleStopFailure(input, overrides = {}) {
+  return reportTurn(input, overrides, {
+    error: { type: input.error, details: input.error_details },
+    skipEmpty: false,
+    allowEmptyTurn: true,
+  });
+}
+
+export function handleSessionEnd(input, overrides = {}) {
+  // Last chance: a cancelled turn never fires Stop or StopFailure. If the
+  // session dies with leftover unreported usage, send it marked interrupted.
+  return reportTurn(input, overrides, {
+    error: { type: 'interrupted', details: input.reason },
+    skipEmpty: true,
+  });
 }
 
 function output(systemMessage) {
@@ -121,5 +166,7 @@ function output(systemMessage) {
 export function handle(input, overrides = {}) {
   if (input.hook_event_name === 'SessionStart') return handleSessionStart(input, overrides);
   if (input.hook_event_name === 'Stop') return handleStop(input, overrides);
+  if (input.hook_event_name === 'StopFailure') return handleStopFailure(input, overrides);
+  if (input.hook_event_name === 'SessionEnd') return handleSessionEnd(input, overrides);
   return { suppressOutput: true };
 }

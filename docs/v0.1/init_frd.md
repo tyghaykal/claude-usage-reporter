@@ -154,8 +154,11 @@ This plugin is intended to be publishable and installable by any Claude Code use
 | `tokens.cache_write` | Cache-creation tokens | Claude Code's local session data |
 | `tokens.total` | Sum of the above | Computed |
 | `session_id` | Claude Code session identifier | Claude Code's local session data |
+| `error` | `true` on a failed or interrupted turn; omitted on success | `StopFailure` / leftover `SessionEnd` |
+| `error_type` | Short slug (`rate_limit`, `interrupted`, …); omitted on success | Hook input, sanitised |
+| `error_details` | Optional, truncated to 300 characters; omitted on success | Hook `error_details` / session-end reason |
 
-Note: no account-type or billing-plan field is included by design — the plugin's data model is intentionally the same regardless of whether the session is subscription- or API-key-backed, satisfying G6.
+Note: no account-type or billing-plan field is included by design — the plugin's data model is intentionally the same regardless of whether the session is subscription- or API-key-backed, satisfying G6. A successful turn omits the error fields so existing backends keep the original payload shape.
 
 ### 9.2 Example Payload (endpoint push)
 
@@ -172,6 +175,16 @@ Note: no account-type or billing-plan field is included by design — the plugin
     "output": 450,
     "total": 2684
   }
+}
+```
+
+Failed / interrupted turn (same payload, plus):
+
+```json
+{
+  "error": true,
+  "error_type": "rate_limit",
+  "error_details": "retry in 2s"
 }
 ```
 

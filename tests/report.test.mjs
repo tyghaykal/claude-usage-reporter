@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { COMMAND } from '../src/config.mjs';
 import { USAGE } from '../src/cli.mjs';
-import { FIRST_RUN_NOTICE, applyPromptMode, buildPayload, formatReport, formatUtc } from '../src/report.mjs';
+import { FIRST_RUN_NOTICE, applyPromptMode, buildPayload, errorMark, formatReport, formatUtc } from '../src/report.mjs';
 
 const TOKENS = { input: 1234, cache_read: 800, cache_write: 200, output: 450, total: 2684 };
 const MODELS = { m: { input: 3, cache_write: 3.75, cache_read: 0.3, output: 15 } };
@@ -64,6 +64,45 @@ test('buildPayload never carries credential material', () => {
   assert.deepEqual(Object.keys(payload).sort(), ['datetime', 'project', 'prompt', 'session_id', 'tokens']);
 });
 
+test('buildPayload omits the error mark on a successful turn', () => {
+  const payload = buildPayload({
+    project: 'p',
+    datetime: 'd',
+    prompt: 'x',
+    sessionId: 's',
+    tokens: TOKENS,
+    promptMode: 'full',
+  });
+  assert.equal('error' in payload, false);
+  assert.equal('error_type' in payload, false);
+  assert.equal('error_details' in payload, false);
+});
+
+test('buildPayload marks a failed turn without leaking unbounded details', () => {
+  const payload = buildPayload({
+    project: 'p',
+    datetime: 'd',
+    prompt: 'x',
+    sessionId: 's',
+    tokens: TOKENS,
+    promptMode: 'full',
+    error: { type: 'rate_limit', details: 'retry in 2s' },
+  });
+  assert.equal(payload.error, true);
+  assert.equal(payload.error_type, 'rate_limit');
+  assert.equal(payload.error_details, 'retry in 2s');
+});
+
+test('errorMark sanitises the type and truncates details', () => {
+  assert.equal(errorMark(null), null);
+  assert.equal(errorMark(undefined), null);
+  assert.deepEqual(errorMark({ type: 'server_error' }), { type: 'server_error' });
+  assert.deepEqual(errorMark({ type: 'Not A Type', details: 12 }), { type: 'unknown' });
+  assert.deepEqual(errorMark({ type: '', details: 'x' }), { type: 'unknown', details: 'x' });
+  const long = 'n'.repeat(400);
+  assert.equal(errorMark({ type: 'unknown', details: long }).details.length, 300);
+});
+
 test('formatUtc renders the documented timestamp', () => {
   assert.equal(formatUtc('2026-08-28T10:15:00.000Z'), '2026-08-28 10:15:00 UTC');
 });
@@ -111,6 +150,35 @@ test('formatReport copes with an unknown model and no session summary', () => {
     models: MODELS,
   });
   assert.equal(text, '[p] 2026-08-28 10:15:00 UTC\nTokens — input: 1,234 | cache read: 800 | cache write: 200 | output: 450 | total: 2,684');
+});
+
+test('formatReport shows the error mark on a failed turn', () => {
+  const text = formatReport({
+    project: 'p',
+    datetime: '2026-08-28T10:15:00.000Z',
+    tokens: TOKENS,
+    model: 'm',
+    session: null,
+    endpointConfigured: true,
+    models: MODELS,
+    error: { type: 'rate_limit', details: 'retry in 2s' },
+  });
+  assert.match(text, /Error: rate_limit — retry in 2s/);
+});
+
+test('formatReport shows a type-only error mark when there are no details', () => {
+  const text = formatReport({
+    project: 'p',
+    datetime: '2026-08-28T10:15:00.000Z',
+    tokens: TOKENS,
+    model: '',
+    session: null,
+    endpointConfigured: true,
+    models: MODELS,
+    error: { type: 'interrupted' },
+  });
+  assert.match(text, /Error: interrupted$/m);
+  assert.doesNotMatch(text, /Error: interrupted —/);
 });
 
 test('formatReport renders zeroed token fields', () => {

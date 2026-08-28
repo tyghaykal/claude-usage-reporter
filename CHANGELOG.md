@@ -6,6 +6,28 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] — 2026-08-28
+
+🔍 **When data is sent:** also after a turn that ends in an API error
+(`StopFailure`), and as a last chance when the session dies with leftover
+unreported usage (`SessionEnd`). Successful turns are unchanged.
+
+🔍 **Data captured:** failed and interrupted turns add `error: true`,
+`error_type`, and optional `error_details` (truncated to 300 characters). A
+successful turn still omits those fields.
+
+### Added
+- `StopFailure` hook: the tokens used on an API-error turn are still submitted,
+  marked as an error. Auth failures that never produced usage are posted with
+  zeros — the error mark itself is the signal.
+- `SessionEnd` hook: leftover unreported usage is flushed and marked
+  `interrupted`. A clean session end (the last turn already reported) sends
+  nothing.
+
+### Known limitations
+- Cancelling a turn (Esc) has no Claude Code hook. Those tokens are only sent
+  if the session then ends before another prompt overwrites them.
+
 ## [0.1.3] — 2026-08-28
 
 ### Added

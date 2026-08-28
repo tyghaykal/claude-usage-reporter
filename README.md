@@ -19,6 +19,7 @@ After every prompt, the plugin records:
 | `session_id` | `abc-123` |
 | `model` | `claude-sonnet-5` |
 | `tokens` | `input`, `cache_read`, `cache_write`, `output`, `total` |
+| `error` | present only on a failed or interrupted turn — see below |
 
 **Nothing leaves your machine by default.** With no endpoint configured, the plugin
 makes no network calls at all — it just prints the report to your terminal. Data is
@@ -120,6 +121,22 @@ Once set, terminal output turns off and each prompt POSTs this JSON instead:
   }
 }
 ```
+
+A successful turn omits the error fields entirely, so existing backends keep seeing
+the original shape. If the turn ended in an API error, or leftover usage is flushed
+because the session died mid-turn, the same payload is sent with a mark:
+
+```json
+{
+  "error": true,
+  "error_type": "rate_limit",
+  "error_details": "retry in 2s"
+}
+```
+
+`error_type` is a short slug (`rate_limit`, `authentication_failed`, `interrupted`,
+…). `error_details` is optional and truncated to 300 characters. An API error that
+never produced usage is still posted, with zeros in `tokens`.
 
 The POST happens in a detached background process, so a slow or dead endpoint can
 never delay your next prompt. Failed pushes are queued locally and retried at the
@@ -252,12 +269,14 @@ full URL, in case yours carries credentials in the userinfo part.
 
 ## How it works
 
-Two hooks, ~600 lines of dependency-free JavaScript:
+Four hooks, ~600 lines of dependency-free JavaScript:
 
 | Hook | What it does |
 |---|---|
 | `SessionStart` | Shows the first-run notice once; flushes any queued failed pushes. |
 | `Stop` | Reads the turn's usage out of the transcript Claude Code already wrote, then prints or pushes it. |
+| `StopFailure` | Same capture when the turn ends in an API error, with `error: true` on the payload. Still sent if the turn used zero tokens. |
+| `SessionEnd` | Last chance: if the session dies with leftover unreported usage (a cancelled turn never fires `Stop`), that usage is posted and marked `interrupted`. A clean session end sends nothing. |
 
 Token counts come from `~/.claude/projects/<project>/<session>.jsonl` — the local
 transcript Claude Code writes for every session. The plugin reads the `usage` block
@@ -280,6 +299,10 @@ de-duplication), `claude-usage-queue.jsonl` (failed pushes, capped at 500),
 
 - **Subagent usage is not counted.** Work done inside a subagent is marked
   `isSidechain` in the transcript and is excluded from the per-turn figure.
+- **Esc / interrupt has no hook.** Claude Code fires `StopFailure` for API errors,
+  but not when you cancel a turn. Leftover usage is only submitted if the session
+  then ends (`SessionEnd`) before another prompt overwrites it. Cancelling a turn
+  and continuing in the same session can drop that turn's tokens.
 - **Failed pushes are dropped after 500 queued records**, oldest first.
 - **Costs are estimates.** See the pricing note above.
 - Pricing lives in `src/pricing.json` and needs updating when Anthropic changes
@@ -306,7 +329,10 @@ and unsent records wait in `~/.claude/claude-usage-queue.jsonl`.
 `always` to get both.
 
 **A turn is missing** — work done inside a subagent is excluded (see Known
-limitations), and a turn that produced no assistant response is not reported.
+limitations). A successful turn that produced no assistant response is not
+reported; an API-error turn is reported even at zero tokens. A cancelled turn
+is only reported if leftover usage is still in the transcript when the session
+ends.
 
 ---
 
@@ -314,7 +340,7 @@ limitations), and a turn that produced no assistant response is not reported.
 
 ```
 npm install
-npm test          # 111 tests, no network, no disk writes outside a temp dir
+npm test          # 127 tests, no network, no disk writes outside a temp dir
 npm run coverage  # enforced at 100% lines / branches / functions / statements
 ```
 
