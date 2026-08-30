@@ -6,6 +6,13 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] — 2026-08-30
+
+### Added
+- `usageProjectLabel`: a friendlier name shown in the terminal report only.
+  The pushed payload still reports the real repo/directory name, so backend
+  aggregation is unaffected.
+
 ## [0.1.4] — 2026-08-28
 
 🔍 **When data is sent:** also after a turn that ends in an API error

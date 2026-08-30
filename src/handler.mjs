@@ -107,7 +107,7 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
   if (shouldDisplay(config)) {
     messages.push(
       formatReport({
-        project,
+        project: config.usageProjectLabel || project,
         datetime,
         tokens: turn.tokens,
         model: turn.model,

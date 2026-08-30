@@ -221,6 +221,7 @@ both are present. Changes take effect on the next prompt — no reinstall.
 | `usageKeySecretHeaderName` | `CC_USAGE_KEY_SECRET_HEADER_NAME` | `X-API-Key-Secret` | For `Key Pair` |
 | `usageKeySecretValue` | `CC_USAGE_KEY_SECRET_VALUE` | — | Secret for `Key Pair` |
 | `usageDisplay` | `CC_USAGE_DISPLAY` | `auto` | `auto`, `always`, `off` |
+| `usageProjectLabel` | `CC_USAGE_PROJECT_LABEL` | — | Friendlier name shown in the terminal report only; the payload still reports the real repo/directory name |
 | `usageUser` | `CC_USAGE_USER` | — | Optional label added to the payload, for shared accounts |
 | `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
 | `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |

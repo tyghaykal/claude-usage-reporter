@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-reporter",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Claude Code plugin that reports per-prompt token usage to your terminal or your own HTTP endpoint.",
   "type": "module",
   "license": "MIT",
