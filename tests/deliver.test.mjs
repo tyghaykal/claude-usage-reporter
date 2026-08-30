@@ -82,6 +82,49 @@ test('deliver logs config and auth warnings for later inspection', async () => {
   assert.match(log, /usageAuthToken is not set/);
 });
 
+test('deliver routes each project to its own endpoint and auth', async () => {
+  const deps = setup({
+    usageProjects: {
+      client: { usageEndpoint: 'https://client.example/usage', usageAuthType: 'Bearer', usageAuthToken: 'sk-client' },
+    },
+  });
+  const seen = [];
+  const result = await deliver(
+    [{ project: 'client', a: 1 }, { project: 'other', a: 2 }],
+    { ...deps, post: async (args) => { seen.push(args); return { ok: true, status: 200 }; } },
+  );
+  assert.deepEqual(result, { sent: 2, failed: 0, skipped: false });
+  const client = seen.find((s) => s.payload.project === 'client');
+  const other = seen.find((s) => s.payload.project === 'other');
+  assert.equal(client.url, 'https://client.example/usage');
+  assert.deepEqual(client.headers, { Authorization: 'Bearer sk-client' });
+  assert.equal(other.url, ENDPOINT);
+  assert.deepEqual(other.headers, {});
+});
+
+test('deliver holds only the records for a project with no endpoint, and sends the rest', async () => {
+  const deps = setup({ usageProjects: { internal: { usageEndpoint: '' } } });
+  const sent = [];
+  const result = await deliver(
+    [{ project: 'internal', a: 1 }, { project: 'other', a: 2 }],
+    { ...deps, post: async ({ payload }) => { sent.push(payload); return { ok: true, status: 200 }; } },
+  );
+  assert.deepEqual(result, { sent: 1, failed: 1, skipped: true });
+  assert.deepEqual(sent, [{ project: 'other', a: 2 }]);
+  assert.match(deps.fs.files.get(QUEUE), /"project":"internal"/);
+});
+
+test('deliver tolerates a malformed queue entry with no project field', async () => {
+  const deps = setup({}, { [QUEUE]: 'null\n' });
+  const sent = [];
+  const result = await deliver([{ project: 'other', a: 1 }], {
+    ...deps,
+    post: async ({ payload }) => { sent.push(payload); return { ok: true, status: 200 }; },
+  });
+  assert.deepEqual(result, { sent: 2, failed: 0, skipped: false });
+  assert.deepEqual(sent, [null, { project: 'other', a: 1 }]);
+});
+
 test('deliver runs on real defaults without arguments', async () => {
   const result = await deliver([], { env: env(), readFile: fakeReader({}), fs: fakeFs() });
   assert.equal(result.skipped, true);

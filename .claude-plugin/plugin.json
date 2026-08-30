@@ -1,6 +1,6 @@
 {
   "name": "claude-usage-reporter",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Reports per-prompt token usage to your terminal, or pushes it to an HTTP endpoint you control. No data leaves your machine until you configure one.",
   "author": {
     "name": "tyghaykal",

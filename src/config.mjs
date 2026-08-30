@@ -43,6 +43,7 @@ export const ENV_KEYS = {
   usageKeySecretHeaderName: 'CC_USAGE_KEY_SECRET_HEADER_NAME',
   usageKeySecretValue: 'CC_USAGE_KEY_SECRET_VALUE',
   usageDisplay: 'CC_USAGE_DISPLAY',
+  usageEnabled: 'CC_USAGE_ENABLED',
   usageUser: 'CC_USAGE_USER',
   usagePromptMode: 'CC_USAGE_PROMPT_MODE',
   usageRetry: 'CC_USAGE_RETRY',
@@ -60,11 +61,21 @@ export const DEFAULTS = {
   usageKeySecretHeaderName: 'X-API-Key-Secret',
   usageKeySecretValue: '',
   usageDisplay: 'auto',
+  // Master switch: false stops the reporter cold — no terminal report, no
+  // network push, for whatever this applies to (globally, or one project via
+  // `usageProject:<project>:usageEnabled false`). Unlike `usageDisplay: off`,
+  // which only silences the terminal, this also stops sending to the endpoint.
+  usageEnabled: true,
   // Per-project friendly names, keyed by the `project` value (repo/dir name) a
   // report would otherwise use. Set via `usageProjectLabel:<project>`, not
   // directly — see cli.mjs. File-only: there's no sane single env var for a map.
   // A project with no entry here reports under its real repo/directory name.
   usageProjectLabels: {},
+  // Per-project setting overrides (own endpoint, own auth, or `usageEnabled:
+  // false` to opt a project out entirely), keyed the same way. Set via
+  // `usageProject:<project>:<key>`, not directly — see cli.mjs. File-only.
+  // A project with no entry here uses the settings above unchanged.
+  usageProjects: {},
   usageUser: '',
   usagePromptMode: 'full',
   usageRetry: true,
@@ -154,11 +165,33 @@ function normalizeProjectLabels(value, warnings) {
   return {};
 }
 
+function normalizeProjectOverrides(value, warnings) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  warnings.push('usageProjects is not an object — ignoring it.');
+  return {};
+}
+
 function normalizeTimeout(value, warnings) {
   const ms = Number(value);
   if (Number.isFinite(ms) && ms > 0) return Math.floor(ms);
   warnings.push(`usageTimeoutMs "${value}" is not a positive number — using ${DEFAULTS.usageTimeoutMs}.`);
   return DEFAULTS.usageTimeoutMs;
+}
+
+/** The routing/behaviour fields — shared by the global config and any per-project override. */
+function normalizeCore(config, warnings) {
+  if (config.usageEndpoint) config.usageEndpoint = normalizeEndpoint(config.usageEndpoint, warnings);
+  config.usageAuthType = normalizeAuthType(config.usageAuthType, warnings);
+  if (!DISPLAY_MODES.includes(config.usageDisplay)) {
+    warnings.push(`Unknown usageDisplay "${config.usageDisplay}" — falling back to "auto".`);
+    config.usageDisplay = 'auto';
+  }
+  config.usagePromptMode = normalizePromptMode(config.usagePromptMode, warnings);
+  config.usageRetry = normalizeBool(config.usageRetry);
+  config.usageEnabled = normalizeBool(config.usageEnabled);
+  config.usageTimeoutMs = normalizeTimeout(config.usageTimeoutMs, warnings);
+  config.usageUser = String(config.usageUser);
+  return config;
 }
 
 /**
@@ -178,19 +211,22 @@ export function loadConfig({ env = process.env, readFile = readFileSync } = {}) 
     config[key] = value;
   }
 
-  if (config.usageEndpoint) config.usageEndpoint = normalizeEndpoint(config.usageEndpoint, warnings);
-  config.usageAuthType = normalizeAuthType(config.usageAuthType, warnings);
-  if (!DISPLAY_MODES.includes(config.usageDisplay)) {
-    warnings.push(`Unknown usageDisplay "${config.usageDisplay}" — falling back to "auto".`);
-    config.usageDisplay = 'auto';
-  }
-  config.usagePromptMode = normalizePromptMode(config.usagePromptMode, warnings);
-  config.usageRetry = normalizeBool(config.usageRetry);
-  config.usageTimeoutMs = normalizeTimeout(config.usageTimeoutMs, warnings);
-  config.usageUser = String(config.usageUser);
+  normalizeCore(config, warnings);
   config.usageProjectLabels = normalizeProjectLabels(config.usageProjectLabels, warnings);
+  config.usageProjects = normalizeProjectOverrides(config.usageProjects, warnings);
 
   return { config, warnings };
+}
+
+/**
+ * Effective config for one project: the global config with that project's
+ * overrides (if any) merged in and re-validated the same way a global value
+ * would be — an invalid override falls back rather than breaking routing.
+ */
+export function resolveProjectConfig(config, project) {
+  const override = config.usageProjects[project];
+  if (!override || typeof override !== 'object' || Array.isArray(override)) return config;
+  return normalizeCore({ ...config, ...override }, []);
 }
 
 /** The label to show/send for `project`: its configured override, else the real repo/directory name itself. */

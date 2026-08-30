@@ -6,6 +6,22 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-08-30
+
+### Added
+- Per-project setting overrides via `usageProject:<project>:<key>` (`unset`
+  the same way) — a project can now use its own endpoint, its own auth, or
+  any other setting, independent of the global config.
+- `usageEnabled`: a master switch (default `true`). Set globally or per
+  project — `usageProject:<project>:usageEnabled false` stops the reporter
+  cold for that project: no terminal report, no push, no exceptions. Unlike
+  `usageDisplay: off`, this also stops sending to the endpoint.
+
+### Changed
+- The detached sender now resolves each queued record's endpoint and auth by
+  its own project, so records for different projects no longer share one
+  endpoint when their overrides differ.
+
 ## [0.1.7] — 2026-08-30
 
 🔍 **Data captured:** `project_label` is now always present in the pushed

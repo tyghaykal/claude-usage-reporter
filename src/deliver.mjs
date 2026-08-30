@@ -6,9 +6,20 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { authHeaders, loadConfig, logPath, queuePath } from './config.mjs';
+import { authHeaders, loadConfig, logPath, queuePath, resolveProjectConfig } from './config.mjs';
 import { postUsage, safeTarget, sendAll } from './sender.mjs';
 import { appendLog, drain, enqueue, fsDefaults } from './store.mjs';
+
+/** Groups records by their `project` field, so each project can route to its own override. */
+function groupByProject(records) {
+  const groups = new Map();
+  for (const record of records) {
+    const project = record && typeof record === 'object' ? record.project : undefined;
+    if (!groups.has(project)) groups.set(project, []);
+    groups.get(project).push(record);
+  }
+  return groups;
+}
 
 export async function deliver(records, {
   env = process.env,
@@ -19,30 +30,44 @@ export async function deliver(records, {
 } = {}) {
   const { config, warnings } = loadConfig({ env, readFile });
   const log = (message) => appendLog(logPath(env), message, fs, now);
-
-  if (!config.usageEndpoint) {
-    // Endpoint cleared between dispatch and delivery — hold the records.
-    for (const record of records) enqueue(queuePath(env), record, fs);
-    return { sent: 0, failed: records.length, skipped: true };
-  }
   for (const warning of warnings) log(warning);
 
-  const { headers, warnings: authWarnings } = authHeaders(config);
-  for (const warning of authWarnings) log(warning);
-
   const queued = config.usageRetry ? drain(queuePath(env), fs) : [];
-  const target = safeTarget(config.usageEndpoint);
+  const all = [...queued, ...records];
+  if (all.length === 0) return { sent: 0, failed: 0, skipped: !config.usageEndpoint };
 
-  const result = await sendAll([...queued, ...records], {
-    url: config.usageEndpoint,
-    headers,
-    timeoutMs: config.usageTimeoutMs,
-    retry: config.usageRetry,
-    post,
-    onFailure: (record, outcome, retry) => {
-      log(`push to ${target} failed: ${outcome.error}${retry ? ' — queued for retry' : ''}`);
-      if (retry) enqueue(queuePath(env), record, fs);
-    },
-  });
-  return { ...result, skipped: false };
+  let sent = 0;
+  let failed = 0;
+  let skipped = false;
+
+  for (const [project, groupRecords] of groupByProject(all)) {
+    const projectConfig = resolveProjectConfig(config, project);
+    if (!projectConfig.usageEndpoint) {
+      // No endpoint for this project (cleared, or never set) — hold its records.
+      for (const record of groupRecords) enqueue(queuePath(env), record, fs);
+      failed += groupRecords.length;
+      skipped = true;
+      continue;
+    }
+
+    const { headers, warnings: authWarnings } = authHeaders(projectConfig);
+    for (const warning of authWarnings) log(warning);
+    const target = safeTarget(projectConfig.usageEndpoint);
+
+    const result = await sendAll(groupRecords, {
+      url: projectConfig.usageEndpoint,
+      headers,
+      timeoutMs: projectConfig.usageTimeoutMs,
+      retry: projectConfig.usageRetry,
+      post,
+      onFailure: (record, outcome, retry) => {
+        log(`push to ${target} failed: ${outcome.error}${retry ? ' — queued for retry' : ''}`);
+        if (retry) enqueue(queuePath(env), record, fs);
+      },
+    });
+    sent += result.sent;
+    failed += result.failed;
+  }
+
+  return { sent, failed, skipped };
 }

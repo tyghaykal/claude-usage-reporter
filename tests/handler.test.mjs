@@ -88,6 +88,7 @@ test('SessionStart does not spawn a sender with an empty queue, no endpoint, or 
     { settings: { usageEndpoint: ENDPOINT } },
     { settings: {}, files: { [QUEUE]: '{"a":1}\n' } },
     { settings: { usageEndpoint: ENDPOINT, usageRetry: false }, files: { [QUEUE]: '{"a":1}\n' } },
+    { settings: { usageEndpoint: ENDPOINT, usageEnabled: false }, files: { [QUEUE]: '{"a":1}\n' } },
   ]) {
     const dispatched = [];
     handleSessionStart({}, deps({ ...options, dispatched }));
@@ -160,6 +161,28 @@ test('a project with no override reports project_label as its own real name', ()
   const { systemMessage } = handleStop(STOP, d);
   assert.match(systemMessage, /^\[my-repo]/m);
   assert.equal(dispatched[0].records[0].project_label, 'my-repo');
+});
+
+test('usageProject:<project>:usageEnabled false stops both the report and the push for that project', () => {
+  const dispatched = [];
+  const d = deps({
+    settings: { usageEndpoint: ENDPOINT, usageDisplay: 'always', usageProjects: { 'my-repo': { usageEnabled: false } } },
+    dispatched,
+  });
+  const result = handleStop(STOP, d);
+  assert.equal(result.systemMessage, undefined);
+  assert.deepEqual(dispatched, []);
+});
+
+test('a project with no usageEnabled override still reports as usual', () => {
+  const dispatched = [];
+  const d = deps({
+    settings: { usageEndpoint: ENDPOINT, usageDisplay: 'always', usageProjects: { 'other-repo': { usageEnabled: false } } },
+    dispatched,
+  });
+  const { systemMessage } = handleStop(STOP, d);
+  assert.match(systemMessage, /^\[my-repo]/m);
+  assert.equal(dispatched.length, 1);
 });
 
 test('usageDisplay: off suppresses the report with no endpoint set', () => {

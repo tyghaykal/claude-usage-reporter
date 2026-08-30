@@ -10,6 +10,7 @@ import {
   maskConfig,
   queuePath,
   readConfigFile,
+  resolveProjectConfig,
   resolveProjectLabel,
   shouldDisplay,
   statePath,
@@ -53,6 +54,7 @@ test('defaults apply when nothing is configured', () => {
   assert.equal(config.usageDisplay, 'auto');
   assert.equal(config.usagePromptMode, 'full');
   assert.equal(config.usageRetry, true);
+  assert.equal(config.usageEnabled, true);
   assert.equal(config.usageTimeoutMs, 5000);
   assert.equal(config.usageHeaderName, 'X-API-Key');
 });
@@ -116,6 +118,12 @@ test('retry coerces string and boolean forms', () => {
   assert.equal(load({ [CONFIG]: JSON.stringify({ usageRetry: false }) }).config.usageRetry, false);
   assert.equal(load({}, { CC_USAGE_RETRY: 'off' }).config.usageRetry, false);
   assert.equal(load({}, { CC_USAGE_RETRY: 'yes' }).config.usageRetry, true);
+});
+
+test('usageEnabled coerces string and boolean forms, defaulting to true', () => {
+  assert.equal(load({ [CONFIG]: JSON.stringify({ usageEnabled: false }) }).config.usageEnabled, false);
+  assert.equal(load({}, { CC_USAGE_ENABLED: 'off' }).config.usageEnabled, false);
+  assert.equal(load({}, { CC_USAGE_ENABLED: 'yes' }).config.usageEnabled, true);
 });
 
 test('timeout must be a positive number', () => {
@@ -203,6 +211,69 @@ test('resolveProjectLabel uses the override when set, otherwise the real project
   assert.equal(resolveProjectLabel(config, 'client'), 'Client Alpha');
   assert.equal(resolveProjectLabel(config, 'other'), 'other');
   assert.equal(resolveProjectLabel({ usageProjectLabels: {} }, 'my-repo'), 'my-repo');
+});
+
+test('usageProjects falls back to {} when malformed', () => {
+  for (const bad of ['"nope"', '[1,2]']) {
+    const result = load({ [CONFIG]: JSON.stringify({ usageProjects: JSON.parse(bad) }) });
+    assert.deepEqual(result.config.usageProjects, {});
+    assert.match(result.warnings[0], /usageProjects is not an object/);
+  }
+  const ok = load({ [CONFIG]: JSON.stringify({ usageProjects: { client: { usageEndpoint: 'https://client.example/u' } } }) });
+  assert.deepEqual(ok.config.usageProjects, { client: { usageEndpoint: 'https://client.example/u' } });
+});
+
+test('resolveProjectConfig applies a project override on top of the global config', () => {
+  const { config } = load({
+    [CONFIG]: JSON.stringify({
+      usageEndpoint: 'https://global.example/u',
+      usageProjects: { client: { usageEndpoint: 'https://client.example/u', usageAuthType: 'bearer' } },
+    }),
+  });
+  const resolved = resolveProjectConfig(config, 'client');
+  assert.equal(resolved.usageEndpoint, 'https://client.example/u');
+  assert.equal(resolved.usageAuthType, 'Bearer');
+  assert.equal(config.usageEndpoint, 'https://global.example/u', 'global config is untouched');
+});
+
+test('resolveProjectConfig returns the global config unchanged for a project with no override', () => {
+  const { config } = load({ [CONFIG]: JSON.stringify({ usageEndpoint: 'https://global.example/u' }) });
+  assert.equal(resolveProjectConfig(config, 'other'), config);
+});
+
+test('resolveProjectConfig lets a project opt out with an empty endpoint and usageDisplay off', () => {
+  const { config } = load({
+    [CONFIG]: JSON.stringify({
+      usageEndpoint: 'https://global.example/u',
+      usageProjects: { internal: { usageEndpoint: '', usageDisplay: 'off' } },
+    }),
+  });
+  const resolved = resolveProjectConfig(config, 'internal');
+  assert.equal(resolved.usageEndpoint, '');
+  assert.equal(resolved.usageDisplay, 'off');
+  assert.equal(shouldDisplay(resolved), false);
+});
+
+test('resolveProjectConfig lets a project fully opt out via usageEnabled, overriding the global switch', () => {
+  const { config } = load({
+    [CONFIG]: JSON.stringify({
+      usageEndpoint: 'https://global.example/u',
+      usageDisplay: 'always',
+      usageProjects: { internal: { usageEnabled: false } },
+    }),
+  });
+  assert.equal(resolveProjectConfig(config, 'internal').usageEnabled, false);
+  assert.equal(config.usageEnabled, true, 'global config is untouched');
+});
+
+test('resolveProjectConfig re-validates the merged override, falling back like a bad global value would', () => {
+  const { config } = load({
+    [CONFIG]: JSON.stringify({
+      usageEndpoint: 'https://global.example/u',
+      usageProjects: { client: { usageEndpoint: 'not a url' } },
+    }),
+  });
+  assert.equal(resolveProjectConfig(config, 'client').usageEndpoint, '');
 });
 
 test('maskConfig hides every secret and leaves the rest readable', () => {

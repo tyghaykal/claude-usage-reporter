@@ -249,8 +249,10 @@ both are present. Changes take effect on the next prompt — no reinstall.
 | `usageKeyIdValue` | `CC_USAGE_KEY_ID_VALUE` | — | Secret for `Key Pair` |
 | `usageKeySecretHeaderName` | `CC_USAGE_KEY_SECRET_HEADER_NAME` | `X-API-Key-Secret` | For `Key Pair` |
 | `usageKeySecretValue` | `CC_USAGE_KEY_SECRET_VALUE` | — | Secret for `Key Pair` |
-| `usageDisplay` | `CC_USAGE_DISPLAY` | `auto` | `auto`, `always`, `off` |
+| `usageDisplay` | `CC_USAGE_DISPLAY` | `auto` | `auto`, `always`, `off` — `off` only silences the terminal, it does not stop a push to `usageEndpoint` |
+| `usageEnabled` | `CC_USAGE_ENABLED` | `true` | Master switch — `false` stops the reporter cold: no terminal report, no push, no exceptions |
 | `usageProjectLabel:<project>` | — (file only) | — | Friendlier name for one project, shown in the terminal report and sent as `project_label`; `project` still reports the real repo/directory name. See *Per-project labels* below. |
+| `usageProject:<project>:<key>` | — (file only) | — | Per-project override of any setting above — its own endpoint, its own auth, or `usageEnabled false` to stop tracking that project entirely. See *Per-project settings* below. |
 | `usageUser` | `CC_USAGE_USER` | — | Optional label added to the payload, for shared accounts |
 | `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
 | `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |
@@ -279,6 +281,25 @@ A project with no override reports `project_label` as its own real repo/director
 name — the same value as `project` — so the field is always present, never
 omitted. Overrides are stored under `usageProjectLabels` in the config file and
 listed separately when you run `usage-config` with no arguments.
+
+### Per-project settings
+
+Beyond labels, a project can override any setting from the table above — its
+own endpoint, its own auth, or opt out of tracking entirely:
+
+```
+/claude-usage-reporter:usage-config set usageProject:client:usageEndpoint https://client-backend.example/usage
+/claude-usage-reporter:usage-config set usageProject:client:usageAuthType Bearer
+/claude-usage-reporter:usage-config set usageProject:client:usageAuthToken sk-xxxx
+
+# Fully disable reporting for one project — no terminal report, no push, regardless of global settings
+/claude-usage-reporter:usage-config set usageProject:internal-tool:usageEnabled false
+/claude-usage-reporter:usage-config unset usageProject:internal-tool:usageEnabled
+```
+
+A project with no override uses the settings above unchanged. Overrides are
+stored under `usageProjects` in the config file, keyed by project, and listed
+separately when you run `usage-config` with no arguments.
 
 ### Authentication shapes
 

@@ -108,6 +108,71 @@ test('usageProjectLabels is not directly settable and shows as per-project overr
   assert.match(text, /usageProjectLabel:client\s+"Client Alpha"/);
 });
 
+test('set/unset usageProject:<project>:<key> edits only that project\'s override', async () => {
+  const fs = fakeFs();
+  const set = await run(['set', 'usageProject:client:usageEndpoint', 'https://client.example/usage'], { fs });
+  assert.equal(set.code, 0);
+  assert.match(set.text, /Set usageProject:client:usageEndpoint = "https:\/\/client\.example\/usage"\./);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)), {
+    usageProjects: { client: { usageEndpoint: 'https://client.example/usage' } },
+  });
+
+  const setDisplay = await run(['set', 'usageProject:internal:usageDisplay', 'off'], { fs });
+  assert.equal(setDisplay.code, 0);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)).usageProjects, {
+    client: { usageEndpoint: 'https://client.example/usage' },
+    internal: { usageDisplay: 'off' },
+  });
+
+  const unset = await run(['unset', 'usageProject:client:usageEndpoint'], { fs });
+  assert.equal(unset.code, 0);
+  assert.match(unset.text, /Removed usageProject:client:usageEndpoint\./);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)).usageProjects, { internal: { usageDisplay: 'off' } });
+});
+
+test('set usageProject:<project>:<key> never echoes a secret, and rejects an unknown key', async () => {
+  const { text, fs } = await run(['set', 'usageProject:client:usageAuthToken', 'sk-live-1234']);
+  assert.match(text, /Set usageProject:client:usageAuthToken = \*\*\*set\*\*\*/);
+  assert.equal(text.includes('sk-live-1234'), false);
+  assert.equal(JSON.parse(fs.files.get(CONFIG)).usageProjects.client.usageAuthToken, 'sk-live-1234');
+
+  const bad = await run(['set', 'usageProject:client:nonsense', 'x']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.text, /Unknown setting/);
+});
+
+test('set usageProject:<project>:<key> without a value is rejected', async () => {
+  const { text, code } = await run(['set', 'usageProject:client:usageEndpoint']);
+  assert.equal(code, 1);
+  assert.match(text, /needs a value/);
+});
+
+test('an unwritable config file is reported for a per-project setting too', async () => {
+  const fs = fakeFs();
+  fs.fail.add('write');
+  const { text, code } = await run(['set', 'usageProject:client:usageEndpoint', 'https://client.example/usage'], { fs });
+  assert.equal(code, 1);
+  assert.match(text, /Could not write/);
+});
+
+test('usageProjects is not directly settable and shows as per-project settings', async () => {
+  const bad = await run(['set', 'usageProjects', '{}']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.text, /Unknown setting/);
+
+  const { text } = await run(['show'], {
+    files: {
+      [CONFIG]: JSON.stringify({
+        usageProjects: { client: { usageEndpoint: 'https://client.example/usage', usageAuthToken: 'sk-live-1234' } },
+      }),
+    },
+  });
+  assert.match(text, /Per-project settings:/);
+  assert.match(text, /usageProject:client:usageEndpoint\s+"https:\/\/client\.example\/usage"/);
+  assert.match(text, /usageProject:client:usageAuthToken\s+"\*\*\*set\*\*\*"/);
+  assert.equal(text.includes('sk-live-1234'), false);
+});
+
 test('bad input is rejected with usage help and a non-zero code', async () => {
   for (const argv of [['frobnicate'], ['set'], ['set', 'nonsense', 'x'], ['unset', 'nonsense']]) {
     const { text, code } = await run(argv);

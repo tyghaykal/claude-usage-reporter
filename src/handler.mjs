@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, logPath, queuePath, resolveProjectLabel, shouldDisplay, statePath } from './config.mjs';
+import { loadConfig, logPath, queuePath, resolveProjectConfig, resolveProjectLabel, shouldDisplay, statePath } from './config.mjs';
 import { deriveProject } from './project.mjs';
 import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
@@ -81,6 +81,8 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
 
   const datetime = deps.now().toISOString();
   const project = deriveProject(input.cwd || turn.cwd, deps.exists);
+  const projectConfig = resolveProjectConfig(config, project);
+  if (!projectConfig.usageEnabled) return output(join([notice, ...warnings]));
   const projectLabel = resolveProjectLabel(config, project);
   const payload = buildPayload({
     project,
@@ -90,15 +92,15 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
     sessionId: turn.sessionId || input.session_id || '',
     tokens: turn.tokens,
     model: turn.model,
-    user: config.usageUser,
-    promptMode: config.usagePromptMode,
+    user: projectConfig.usageUser,
+    promptMode: projectConfig.usagePromptMode,
     error,
   });
 
   const messages = [notice, ...warnings];
 
   // FR-16 / PD-1: the first run discloses before it can ever transmit.
-  if (config.usageEndpoint && !notice) {
+  if (projectConfig.usageEndpoint && !notice) {
     const launched = deps.dispatchImpl([payload], { script: deps.senderScript, env: deps.env });
     if (!launched) {
       appendLog(logPath(deps.env), 'failed to launch usage sender', deps.fs, deps.now);
@@ -106,7 +108,7 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
     }
   }
 
-  if (shouldDisplay(config)) {
+  if (shouldDisplay(projectConfig)) {
     messages.push(
       formatReport({
         project: projectLabel,
@@ -114,7 +116,7 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
         tokens: turn.tokens,
         model: turn.model,
         session: sessionSummary(entries),
-        endpointConfigured: Boolean(config.usageEndpoint),
+        endpointConfigured: Boolean(projectConfig.usageEndpoint),
         models: deps.models || loadPricing(),
         error,
       }),
@@ -129,7 +131,7 @@ export function handleSessionStart(input, overrides = {}) {
   const { notice } = consumeNotice(deps, deps.env);
 
   // Flush anything that failed to send in an earlier session (FRD §14 Q3).
-  if (config.usageEndpoint && config.usageRetry && !notice) {
+  if (config.usageEnabled && config.usageEndpoint && config.usageRetry && !notice) {
     const pending = drain(queuePath(deps.env), deps.fs, { clear: false });
     if (pending.length) {
       deps.dispatchImpl([], { script: deps.senderScript, env: deps.env });

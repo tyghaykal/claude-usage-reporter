@@ -9,10 +9,11 @@ import { deriveProject } from './project.mjs';
 import { postUsage } from './sender.mjs';
 import { fsDefaults, readJson, writeJson } from './store.mjs';
 
-// usageProjectLabels is a map (project name -> label); it's edited only through
-// the namespaced usageProjectLabel:<project> key below, never set directly.
-const KEYS = Object.keys(DEFAULTS).filter((key) => key !== 'usageProjectLabels');
+// usageProjectLabels/usageProjects are maps (project name -> value); each is
+// edited only through its namespaced key below, never set directly.
+const KEYS = Object.keys(DEFAULTS).filter((key) => key !== 'usageProjectLabels' && key !== 'usageProjects');
 const PROJECT_LABEL_KEY = /^usageProjectLabel:(.+)$/;
+const PROJECT_OVERRIDE_KEY = /^usageProject:([^:]+):(.+)$/;
 
 const USAGE = [
   'Usage:',
@@ -24,6 +25,9 @@ const USAGE = [
   `  ${COMMAND} unset usageProjectLabel:<project>`,
   '      friendlier name for one project — <project> is the repo/dir name shown as "project" in reports;',
   '      a project with no override reports under that real name',
+  `  ${COMMAND} set usageProject:<project>:<key> <value>`,
+  `  ${COMMAND} unset usageProject:<project>:<key>`,
+  '      per-project override of any key below (own endpoint, own auth, or usageDisplay off to stop tracking it)',
   `  ${COMMAND} test-connection`,
   '      POST one zero-token record to the configured endpoint and report the result',
   '',
@@ -36,14 +40,20 @@ function show(config, warnings, path, env) {
     const source = env[ENV_KEYS[key]] !== undefined ? ' (env available)' : '';
     return `  ${key.padEnd(26)} ${JSON.stringify(masked[key])}${source}`;
   });
-  const overrides = Object.entries(config.usageProjectLabels);
+  const labelOverrides = Object.entries(config.usageProjectLabels);
+  const projectOverrides = Object.entries(config.usageProjects).flatMap(([project, override]) =>
+    Object.entries(override).map(
+      ([key, value]) => `  usageProject:${project}:${key.padEnd(20)} ${JSON.stringify(SECRET_KEYS.has(key) && value ? '***set***' : value)}`,
+    ),
+  );
   return [
     `Config file: ${path}`,
     '',
     ...rows,
-    ...(overrides.length
-      ? ['', 'Per-project overrides:', ...overrides.map(([p, l]) => `  usageProjectLabel:${p.padEnd(20)} ${JSON.stringify(l)}`)]
+    ...(labelOverrides.length
+      ? ['', 'Per-project overrides:', ...labelOverrides.map(([p, l]) => `  usageProjectLabel:${p.padEnd(20)} ${JSON.stringify(l)}`)]
       : []),
+    ...(projectOverrides.length ? ['', 'Per-project settings:', ...projectOverrides] : []),
     '',
     config.usageEndpoint
       ? `Reporting to ${config.usageEndpoint} — prompt text leaves this machine on every call.`
@@ -130,11 +140,35 @@ export async function runCli(argv, {
   }
 
   const projectMatch = key ? PROJECT_LABEL_KEY.exec(key) : null;
-  if (!key || !(KEYS.includes(key) || projectMatch)) {
+  const overrideMatch = key && !projectMatch ? PROJECT_OVERRIDE_KEY.exec(key) : null;
+  if (overrideMatch && !KEYS.includes(overrideMatch[2])) {
+    return { text: `Unknown setting "${key}".\n\n${USAGE}`, code: 1 };
+  }
+  if (!key || !(KEYS.includes(key) || projectMatch || overrideMatch)) {
     return { text: `Unknown setting "${key || ''}".\n\n${USAGE}`, code: 1 };
   }
 
   const stored = readJson(path, fs);
+
+  if (overrideMatch) {
+    const [, project, overrideKey] = overrideMatch;
+    const projects = { ...(stored.usageProjects || {}) };
+    const override = { ...(projects[project] || {}) };
+    if (command === 'unset') {
+      delete override[overrideKey];
+    } else {
+      const value = rest.join(' ');
+      if (!value) return { text: `set ${key} needs a value.\n\n${USAGE}`, code: 1 };
+      override[overrideKey] = value;
+    }
+    if (Object.keys(override).length) projects[project] = override;
+    else delete projects[project];
+    stored.usageProjects = projects;
+    if (!writeJson(path, stored, fs)) return { text: `Could not write ${path}.`, code: 1 };
+    const shown = SECRET_KEYS.has(overrideKey) ? '***set***' : JSON.stringify(override[overrideKey]);
+    const verb = command === 'unset' ? `Removed ${key}.` : `Set ${key} = ${shown}.`;
+    return { text: `${verb} Takes effect on the next prompt.`, code: 0 };
+  }
 
   if (projectMatch) {
     const project = projectMatch[1];
