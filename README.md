@@ -35,6 +35,31 @@ Everything the plugin does is plain, unminified JavaScript in this repository �
 
 ---
 
+## Privacy & Data
+
+**The plugin's authors collect nothing.** There is no telemetry, no analytics, no
+hardcoded server, and no third party in this project at all — the only network
+call in the entire codebase is the POST in `src/sender.mjs`, and it only ever
+fires against the `usageEndpoint` URL *you* set. Leave it unset and the plugin
+never makes a network request, period. Verify it yourself: `grep -rn fetch src/`
+turns up exactly one call site.
+
+Nothing is processed outside that scope, either — there's no relay, no
+forwarding, no bundled backend the data passes through on its way anywhere. Your
+prompt text and token counts go straight from your machine to the endpoint you
+configured, over HTTPS/HTTP you control, with nothing in between.
+
+Everything else stays local, under `~/.claude/`, mode `0600`:
+`claude-usage.json` (settings), `claude-usage-state.json` (first-run flag),
+`claude-usage-queue.jsonl` (pushes that failed, so they can retry), and
+`claude-usage.log` (delivery failures only — payload contents are never logged).
+
+The plugin also never reads your Anthropic account credentials or API key — it
+only reads the local transcript Claude Code already writes to compute token
+counts (see *How it works* below).
+
+---
+
 ## Install
 
 ```
