@@ -138,7 +138,7 @@ test('usageDisplay: always shows the report alongside the push', () => {
   assert.doesNotMatch(systemMessage, /No usage endpoint configured/);
 });
 
-test('usageProjectLabel renames the terminal report only; the pushed payload keeps the real project', () => {
+test('usageProjectLabel renames the terminal report and rides along in the payload as project_label, alongside the real project', () => {
   const dispatched = [];
   const d = deps({
     settings: { usageEndpoint: ENDPOINT, usageDisplay: 'always', usageProjectLabel: 'Client Alpha' },
@@ -147,6 +147,7 @@ test('usageProjectLabel renames the terminal report only; the pushed payload kee
   const { systemMessage } = handleStop(STOP, d);
   assert.match(systemMessage, /^\[Client Alpha]/m);
   assert.equal(dispatched[0].records[0].project, 'my-repo');
+  assert.equal(dispatched[0].records[0].project_label, 'Client Alpha');
 });
 
 test('usageDisplay: off suppresses the report with no endpoint set', () => {

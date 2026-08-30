@@ -17,6 +17,7 @@ test('applyPromptMode honours full, none and truncate:N', () => {
 test('buildPayload matches the documented shape', () => {
   const payload = buildPayload({
     project: 'my-project',
+    projectLabel: 'Client Alpha',
     datetime: '2026-08-28T10:15:00.000Z',
     prompt: 'fix the login bug',
     sessionId: 'abc-123',
@@ -27,6 +28,7 @@ test('buildPayload matches the documented shape', () => {
   });
   assert.deepEqual(payload, {
     project: 'my-project',
+    project_label: 'Client Alpha',
     datetime: '2026-08-28T10:15:00.000Z',
     prompt: 'fix the login bug',
     session_id: 'abc-123',
@@ -39,6 +41,7 @@ test('buildPayload matches the documented shape', () => {
 test('buildPayload omits optional fields and applies the prompt mode', () => {
   const payload = buildPayload({
     project: 'p',
+    projectLabel: '',
     datetime: 'd',
     prompt: 'secret prompt',
     sessionId: 's',
@@ -47,6 +50,7 @@ test('buildPayload omits optional fields and applies the prompt mode', () => {
     user: '',
     promptMode: 'none',
   });
+  assert.equal('project_label' in payload, false);
   assert.equal('model' in payload, false);
   assert.equal('user' in payload, false);
   assert.equal(payload.prompt, '');

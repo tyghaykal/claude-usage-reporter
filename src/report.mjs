@@ -30,7 +30,7 @@ export function errorMark(error) {
   return details ? { type, details } : { type };
 }
 
-export function buildPayload({ project, datetime, prompt, sessionId, tokens, model, user, promptMode, error }) {
+export function buildPayload({ project, projectLabel, datetime, prompt, sessionId, tokens, model, user, promptMode, error }) {
   const payload = {
     project,
     datetime,
@@ -44,6 +44,7 @@ export function buildPayload({ project, datetime, prompt, sessionId, tokens, mod
       total: tokens.total,
     },
   };
+  if (projectLabel) payload.project_label = projectLabel;
   if (model) payload.model = model;
   if (user) payload.user = user;
   const mark = errorMark(error);
@@ -94,7 +95,7 @@ export function formatReport({ project, datetime, tokens, model, session, endpoi
 export const FIRST_RUN_NOTICE = [
   'Claude Usage Reporter is now active.',
   '',
-  'It captures, per prompt: project name, timestamp, your prompt text, the model,',
+  'It captures, per prompt: project name (and your project label, if set), timestamp, your prompt text, the model,',
   'the session id, and token counts (input / cache read / cache write / output).',
   '',
   'Nothing leaves this machine. Usage is printed to your terminal only, until you',

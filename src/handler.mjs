@@ -83,6 +83,7 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
   const project = deriveProject(input.cwd || turn.cwd, deps.exists);
   const payload = buildPayload({
     project,
+    projectLabel: config.usageProjectLabel,
     datetime,
     prompt: turn.prompt,
     sessionId: turn.sessionId || input.session_id || '',

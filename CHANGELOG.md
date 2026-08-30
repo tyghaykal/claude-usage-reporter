@@ -6,6 +6,16 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.6] — 2026-08-30
+
+🔍 **Data captured:** when `usageProjectLabel` is set, the payload now also
+carries it as `project_label`, alongside the real `project`. A payload with
+no label set is unchanged.
+
+### Changed
+- `usageProjectLabel` is no longer terminal-display-only — it now rides along
+  in the pushed payload too.
+
 ## [0.1.5] — 2026-08-30
 
 ### Added
