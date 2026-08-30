@@ -73,6 +73,41 @@ test('unset removes a key', async () => {
   assert.deepEqual(JSON.parse(fs.files.get(CONFIG)), { usageUser: 'ana' });
 });
 
+test('set/unset usageProjectLabel:<project> edits only that project\'s override', async () => {
+  const fs = fakeFs();
+  const set = await run(['set', 'usageProjectLabel:client', 'Client', 'Alpha'], { fs });
+  assert.equal(set.code, 0);
+  assert.match(set.text, /Set usageProjectLabel:client = "Client Alpha"\. Takes effect on the next prompt\./);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)), { usageProjectLabels: { client: 'Client Alpha' } });
+
+  const setAnother = await run(['set', 'usageProjectLabel:other', 'Other'], { fs });
+  assert.equal(setAnother.code, 0);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)).usageProjectLabels, { client: 'Client Alpha', other: 'Other' });
+
+  const unset = await run(['unset', 'usageProjectLabel:client'], { fs });
+  assert.equal(unset.code, 0);
+  assert.match(unset.text, /Removed usageProjectLabel:client\./);
+  assert.deepEqual(JSON.parse(fs.files.get(CONFIG)).usageProjectLabels, { other: 'Other' });
+});
+
+test('set usageProjectLabel:<project> without a value is rejected', async () => {
+  const { text, code } = await run(['set', 'usageProjectLabel:client']);
+  assert.equal(code, 1);
+  assert.match(text, /needs a value/);
+});
+
+test('usageProjectLabels is not directly settable and shows as per-project overrides', async () => {
+  const bad = await run(['set', 'usageProjectLabels', '{}']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.text, /Unknown setting/);
+
+  const { text } = await run(['show'], {
+    files: { [CONFIG]: JSON.stringify({ usageProjectLabels: { client: 'Client Alpha' } }) },
+  });
+  assert.match(text, /Per-project overrides:/);
+  assert.match(text, /usageProjectLabel:client\s+"Client Alpha"/);
+});
+
 test('bad input is rejected with usage help and a non-zero code', async () => {
   for (const argv of [['frobnicate'], ['set'], ['set', 'nonsense', 'x'], ['unset', 'nonsense']]) {
     const { text, code } = await run(argv);
@@ -91,6 +126,14 @@ test('an unwritable config file is reported, not thrown', async () => {
   const fs = fakeFs();
   fs.fail.add('write');
   const { text, code } = await run(['set', 'usageUser', 'ana'], { fs });
+  assert.equal(code, 1);
+  assert.match(text, /Could not write/);
+});
+
+test('an unwritable config file is reported for a per-project label too', async () => {
+  const fs = fakeFs();
+  fs.fail.add('write');
+  const { text, code } = await run(['set', 'usageProjectLabel:client', 'Client Alpha'], { fs });
   assert.equal(code, 1);
   assert.match(text, /Could not write/);
 });

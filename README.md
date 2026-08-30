@@ -134,7 +134,8 @@ Once set, terminal output turns off and each prompt POSTs this JSON instead:
 {
   // Always the git repository name (or directory name outside a repo).
   "project": "my-project",
-  // Only present when usageProjectLabel is set — your own friendlier name.
+  // Your friendlier name if you set one for this project, otherwise the same
+  // value as "project" — always present.
   "project_label": "Client Alpha",
   "datetime": "2026-08-28T10:15:00Z",
   "prompt": "fix the login bug",
@@ -249,7 +250,7 @@ both are present. Changes take effect on the next prompt — no reinstall.
 | `usageKeySecretHeaderName` | `CC_USAGE_KEY_SECRET_HEADER_NAME` | `X-API-Key-Secret` | For `Key Pair` |
 | `usageKeySecretValue` | `CC_USAGE_KEY_SECRET_VALUE` | — | Secret for `Key Pair` |
 | `usageDisplay` | `CC_USAGE_DISPLAY` | `auto` | `auto`, `always`, `off` |
-| `usageProjectLabel` | `CC_USAGE_PROJECT_LABEL` | — | Friendlier name shown in the terminal report and sent as `project_label`; `project` still reports the real repo/directory name |
+| `usageProjectLabel:<project>` | — (file only) | — | Friendlier name for one project, shown in the terminal report and sent as `project_label`; `project` still reports the real repo/directory name. See *Per-project labels* below. |
 | `usageUser` | `CC_USAGE_USER` | — | Optional label added to the payload, for shared accounts |
 | `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
 | `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |
@@ -262,6 +263,22 @@ both are present. Changes take effect on the next prompt — no reinstall.
 - **`always`** — report *and* push, on every call.
 - **`off`** — never print. With no endpoint set this leaves you with no visibility
   at all, so it is meant for scripted use.
+
+### Per-project labels
+
+Labels are set per project, not globally — there is no single name that applies
+everywhere. `<project>` is the real repo/directory name (the same string
+`project` reports):
+
+```
+/claude-usage-reporter:usage-config set usageProjectLabel:client "Client Alpha"
+/claude-usage-reporter:usage-config unset usageProjectLabel:client
+```
+
+A project with no override reports `project_label` as its own real repo/directory
+name — the same value as `project` — so the field is always present, never
+omitted. Overrides are stored under `usageProjectLabels` in the config file and
+listed separately when you run `usage-config` with no arguments.
 
 ### Authentication shapes
 

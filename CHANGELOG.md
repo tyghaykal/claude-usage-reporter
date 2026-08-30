@@ -6,6 +6,18 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.7] — 2026-08-30
+
+🔍 **Data captured:** `project_label` is now always present in the pushed
+payload — it defaults to the same value as `project` (the real repo/directory
+name) when no label is set, instead of being omitted.
+
+### Changed
+- **Breaking:** the global `usageProjectLabel` setting is removed. Labels are
+  per project only, via `usageProjectLabel:<project>` (`unset` the same way).
+  A project with no override now reports its own real name as `project_label`
+  rather than nothing.
+
 ## [0.1.6] — 2026-08-30
 
 🔍 **Data captured:** when `usageProjectLabel` is set, the payload now also

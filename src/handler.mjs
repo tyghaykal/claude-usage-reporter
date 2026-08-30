@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, logPath, queuePath, shouldDisplay, statePath } from './config.mjs';
+import { loadConfig, logPath, queuePath, resolveProjectLabel, shouldDisplay, statePath } from './config.mjs';
 import { deriveProject } from './project.mjs';
 import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
@@ -81,9 +81,10 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
 
   const datetime = deps.now().toISOString();
   const project = deriveProject(input.cwd || turn.cwd, deps.exists);
+  const projectLabel = resolveProjectLabel(config, project);
   const payload = buildPayload({
     project,
-    projectLabel: config.usageProjectLabel,
+    projectLabel,
     datetime,
     prompt: turn.prompt,
     sessionId: turn.sessionId || input.session_id || '',
@@ -108,7 +109,7 @@ function reportTurn(input, overrides, { error = null, skipEmpty = true, allowEmp
   if (shouldDisplay(config)) {
     messages.push(
       formatReport({
-        project: config.usageProjectLabel || project,
+        project: projectLabel,
         datetime,
         tokens: turn.tokens,
         model: turn.model,

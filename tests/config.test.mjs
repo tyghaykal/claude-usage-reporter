@@ -10,6 +10,7 @@ import {
   maskConfig,
   queuePath,
   readConfigFile,
+  resolveProjectLabel,
   shouldDisplay,
   statePath,
 } from '../src/config.mjs';
@@ -184,6 +185,24 @@ test('authHeaders warns instead of sending a half-configured credential', () => 
   });
   assert.deepEqual(pair.headers, { 'X-Id': 'id' });
   assert.equal(pair.warnings.length, 1);
+});
+
+test('usageProjectLabels falls back to {} when malformed', () => {
+  for (const bad of ['"nope"', '[1,2]']) {
+    const result = load({ [CONFIG]: JSON.stringify({ usageProjectLabels: JSON.parse(bad) }) });
+    assert.deepEqual(result.config.usageProjectLabels, {});
+    assert.match(result.warnings[0], /usageProjectLabels is not an object/);
+  }
+  const ok = load({ [CONFIG]: JSON.stringify({ usageProjectLabels: { client: 'Client Alpha' } }) });
+  assert.deepEqual(ok.config.usageProjectLabels, { client: 'Client Alpha' });
+  assert.deepEqual(ok.warnings, []);
+});
+
+test('resolveProjectLabel uses the override when set, otherwise the real project name', () => {
+  const config = { usageProjectLabels: { client: 'Client Alpha' } };
+  assert.equal(resolveProjectLabel(config, 'client'), 'Client Alpha');
+  assert.equal(resolveProjectLabel(config, 'other'), 'other');
+  assert.equal(resolveProjectLabel({ usageProjectLabels: {} }, 'my-repo'), 'my-repo');
 });
 
 test('maskConfig hides every secret and leaves the rest readable', () => {

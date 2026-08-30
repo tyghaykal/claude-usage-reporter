@@ -9,7 +9,10 @@ import { deriveProject } from './project.mjs';
 import { postUsage } from './sender.mjs';
 import { fsDefaults, readJson, writeJson } from './store.mjs';
 
-const KEYS = Object.keys(DEFAULTS);
+// usageProjectLabels is a map (project name -> label); it's edited only through
+// the namespaced usageProjectLabel:<project> key below, never set directly.
+const KEYS = Object.keys(DEFAULTS).filter((key) => key !== 'usageProjectLabels');
+const PROJECT_LABEL_KEY = /^usageProjectLabel:(.+)$/;
 
 const USAGE = [
   'Usage:',
@@ -17,6 +20,10 @@ const USAGE = [
   '      show current settings (secrets masked)',
   `  ${COMMAND} set <key> <value>`,
   `  ${COMMAND} unset <key>`,
+  `  ${COMMAND} set usageProjectLabel:<project> <value>`,
+  `  ${COMMAND} unset usageProjectLabel:<project>`,
+  '      friendlier name for one project — <project> is the repo/dir name shown as "project" in reports;',
+  '      a project with no override reports under that real name',
   `  ${COMMAND} test-connection`,
   '      POST one zero-token record to the configured endpoint and report the result',
   '',
@@ -29,10 +36,14 @@ function show(config, warnings, path, env) {
     const source = env[ENV_KEYS[key]] !== undefined ? ' (env available)' : '';
     return `  ${key.padEnd(26)} ${JSON.stringify(masked[key])}${source}`;
   });
+  const overrides = Object.entries(config.usageProjectLabels);
   return [
     `Config file: ${path}`,
     '',
     ...rows,
+    ...(overrides.length
+      ? ['', 'Per-project overrides:', ...overrides.map(([p, l]) => `  usageProjectLabel:${p.padEnd(20)} ${JSON.stringify(l)}`)]
+      : []),
     '',
     config.usageEndpoint
       ? `Reporting to ${config.usageEndpoint} — prompt text leaves this machine on every call.`
@@ -117,11 +128,30 @@ export async function runCli(argv, {
   if (command !== 'set' && command !== 'unset') {
     return { text: `Unknown command "${command}".\n\n${USAGE}`, code: 1 };
   }
-  if (!key || !KEYS.includes(key)) {
+
+  const projectMatch = key ? PROJECT_LABEL_KEY.exec(key) : null;
+  if (!key || !(KEYS.includes(key) || projectMatch)) {
     return { text: `Unknown setting "${key || ''}".\n\n${USAGE}`, code: 1 };
   }
 
   const stored = readJson(path, fs);
+
+  if (projectMatch) {
+    const project = projectMatch[1];
+    const labels = { ...(stored.usageProjectLabels || {}) };
+    if (command === 'unset') {
+      delete labels[project];
+    } else {
+      const value = rest.join(' ');
+      if (!value) return { text: `set ${key} needs a value.\n\n${USAGE}`, code: 1 };
+      labels[project] = value;
+    }
+    stored.usageProjectLabels = labels;
+    if (!writeJson(path, stored, fs)) return { text: `Could not write ${path}.`, code: 1 };
+    const verb = command === 'unset' ? `Removed ${key}.` : `Set ${key} = ${JSON.stringify(labels[project])}.`;
+    return { text: `${verb} Takes effect on the next prompt.`, code: 0 };
+  }
+
   if (command === 'unset') {
     delete stored[key];
   } else {

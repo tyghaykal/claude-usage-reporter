@@ -43,7 +43,6 @@ export const ENV_KEYS = {
   usageKeySecretHeaderName: 'CC_USAGE_KEY_SECRET_HEADER_NAME',
   usageKeySecretValue: 'CC_USAGE_KEY_SECRET_VALUE',
   usageDisplay: 'CC_USAGE_DISPLAY',
-  usageProjectLabel: 'CC_USAGE_PROJECT_LABEL',
   usageUser: 'CC_USAGE_USER',
   usagePromptMode: 'CC_USAGE_PROMPT_MODE',
   usageRetry: 'CC_USAGE_RETRY',
@@ -61,7 +60,11 @@ export const DEFAULTS = {
   usageKeySecretHeaderName: 'X-API-Key-Secret',
   usageKeySecretValue: '',
   usageDisplay: 'auto',
-  usageProjectLabel: '',
+  // Per-project friendly names, keyed by the `project` value (repo/dir name) a
+  // report would otherwise use. Set via `usageProjectLabel:<project>`, not
+  // directly — see cli.mjs. File-only: there's no sane single env var for a map.
+  // A project with no entry here reports under its real repo/directory name.
+  usageProjectLabels: {},
   usageUser: '',
   usagePromptMode: 'full',
   usageRetry: true,
@@ -145,6 +148,12 @@ function normalizeBool(value) {
   return !/^(0|false|no|off)$/i.test(String(value).trim());
 }
 
+function normalizeProjectLabels(value, warnings) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  warnings.push('usageProjectLabels is not an object — ignoring it.');
+  return {};
+}
+
 function normalizeTimeout(value, warnings) {
   const ms = Number(value);
   if (Number.isFinite(ms) && ms > 0) return Math.floor(ms);
@@ -179,8 +188,14 @@ export function loadConfig({ env = process.env, readFile = readFileSync } = {}) 
   config.usageRetry = normalizeBool(config.usageRetry);
   config.usageTimeoutMs = normalizeTimeout(config.usageTimeoutMs, warnings);
   config.usageUser = String(config.usageUser);
+  config.usageProjectLabels = normalizeProjectLabels(config.usageProjectLabels, warnings);
 
   return { config, warnings };
+}
+
+/** The label to show/send for `project`: its configured override, else the real repo/directory name itself. */
+export function resolveProjectLabel(config, project) {
+  return config.usageProjectLabels[project] || project;
 }
 
 /**
