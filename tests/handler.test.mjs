@@ -3,7 +3,16 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SENDER_SCRIPT, handle, handleSessionEnd, handleSessionStart, handleStop, handleStopFailure } from '../src/handler.mjs';
+import {
+  SENDER_SCRIPT,
+  handle,
+  handleSessionEnd,
+  handleSessionStart,
+  handleStop,
+  handleStopFailure,
+  handleSubagentStop,
+  handleUserPromptSubmit,
+} from '../src/handler.mjs';
 import { CONFIG, LOG, QUEUE, STATE, USAGE_A, env, fakeFs, fakeReader, transcript } from './helpers.mjs';
 
 const TRANSCRIPT = '/session.jsonl';
@@ -42,6 +51,8 @@ const SESSION_END = {
   session_id: 's1',
   reason: 'prompt_input_exit',
 };
+const SUBAGENT_STOP = { hook_event_name: 'SubagentStop', transcript_path: TRANSCRIPT, cwd: '/work/my-repo', session_id: 's1' };
+const PROMPT_SUBMIT = { hook_event_name: 'UserPromptSubmit', transcript_path: TRANSCRIPT, cwd: '/work/my-repo', session_id: 's1' };
 
 test('the sender script path resolves to the shipped binary', () => {
   assert.match(SENDER_SCRIPT, /bin\/send\.mjs$/);
@@ -366,6 +377,201 @@ test('the project falls back to the transcript cwd when the hook omits it', () =
   const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
   handleStop({ ...STOP, cwd: '' }, d);
   assert.equal(dispatched[0].records[0].project, 'repo');
+});
+
+test('handle routes SubagentStop', () => {
+  const entries = [
+    { type: 'user', isSidechain: true, sessionId: 's1', cwd: '/work/my-repo', message: { content: 'subtask' } },
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', cwd: '/work/my-repo', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+  ];
+  const d = deps({ entries });
+  assert.ok(handle(SUBAGENT_STOP, d).systemMessage);
+});
+
+test('a mixed-model turn dispatches one payload per model, in a single call', () => {
+  const dispatched = [];
+  const entries = [
+    { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/work/my-repo', message: { content: 'hi' } },
+    { type: 'assistant', promptId: 'p1', requestId: 'r1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+    { type: 'assistant', promptId: 'p1', requestId: 'r2', message: { model: 'claude-sonnet-5', usage: { output_tokens: 10 } } },
+  ];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched });
+  handleStop(STOP, d);
+  assert.equal(dispatched.length, 1);
+  assert.deepEqual(
+    dispatched[0].records.map((r) => [r.model, r.tokens.total]),
+    [
+      ['claude-haiku-4-5', 4],
+      ['claude-sonnet-5', 10],
+    ],
+  );
+});
+
+test('SubagentStop reports sidechain usage per model, and stays quiet with none', () => {
+  const dispatched = [];
+  const entries = [
+    { type: 'user', isSidechain: true, sessionId: 's1', cwd: '/work/my-repo', message: { content: 'run tests' } },
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', cwd: '/work/my-repo', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+  ];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched });
+  const result = handleSubagentStop(SUBAGENT_STOP, d);
+  assert.equal(result.systemMessage, undefined);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].model, 'claude-haiku-4-5');
+  assert.equal(dispatched[0].records[0].tokens.total, 4);
+  assert.equal(dispatched[0].records[0].prompt, 'run tests');
+
+  assert.equal(handleSubagentStop(SUBAGENT_STOP, deps({ entries: [] })).systemMessage, undefined);
+});
+
+test('a repeated SubagentStop for the same subagent is reported only once', () => {
+  const dispatched = [];
+  const entries = [
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+  ];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched });
+  handleSubagentStop(SUBAGENT_STOP, d);
+  handleSubagentStop(SUBAGENT_STOP, d);
+  assert.equal(dispatched.length, 1);
+});
+
+test('a second subagent call only reports its own fresh usage', () => {
+  const dispatched = [];
+  const first = [
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+  ];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries: first, dispatched });
+  handleSubagentStop(SUBAGENT_STOP, d);
+
+  const second = [
+    ...first,
+    { type: 'assistant', isSidechain: true, requestId: 'sub2', sessionId: 's1', message: { model: 'claude-opus-5', usage: { output_tokens: 7 } } },
+  ];
+  d.readFile = fakeReader({ [CONFIG]: JSON.stringify({ usageEndpoint: ENDPOINT }), [TRANSCRIPT]: second.map((e) => JSON.stringify(e)).join('\n') });
+  handleSubagentStop(SUBAGENT_STOP, d);
+
+  assert.equal(dispatched.length, 2);
+  assert.equal(dispatched[1].records[0].model, 'claude-opus-5');
+  assert.equal(dispatched[1].records[0].tokens.total, 7);
+});
+
+test('SubagentStop dedup state does not collide with the main-turn dedup state', () => {
+  const dispatched = [];
+  const subagentEntries = [
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+  ];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries: subagentEntries, dispatched });
+  handleSubagentStop(SUBAGENT_STOP, d);
+
+  // The main turn (a different transcript state) still reports normally afterwards.
+  d.readFile = fakeReader({
+    [CONFIG]: JSON.stringify({ usageEndpoint: ENDPOINT }),
+    [TRANSCRIPT]: transcript({ usages: [USAGE_A] }).map((e) => JSON.stringify(e)).join('\n'),
+  });
+  handleStop(STOP, d);
+  assert.equal(dispatched.length, 2);
+  assert.equal(dispatched[1].records[0].tokens.total, 1150);
+});
+
+test('a mixed-model turn prints one report block per model, session total on the last', () => {
+  const entries = [
+    { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/work/my-repo', message: { content: 'hi' } },
+    { type: 'assistant', promptId: 'p1', requestId: 'r1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+    { type: 'assistant', promptId: 'p1', requestId: 'r2', message: { model: 'claude-sonnet-5', usage: { output_tokens: 10 } } },
+  ];
+  const { systemMessage } = handleStop(STOP, deps({ entries }));
+  assert.match(systemMessage, /claude-haiku-4-5/);
+  assert.match(systemMessage, /claude-sonnet-5/);
+  assert.match(systemMessage, /Session running total/);
+  assert.equal((systemMessage.match(/Session running total/g) || []).length, 1);
+});
+
+test('SubagentStop stays quiet when the fresh entries carried no tokens', () => {
+  const dispatched = [];
+  const entries = [{ type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: {} }];
+  const result = handleSubagentStop(SUBAGENT_STOP, deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched }));
+  assert.equal(result.systemMessage, undefined);
+  assert.deepEqual(dispatched, []);
+});
+
+test('SubagentStop respects usageEnabled false for the project', () => {
+  const dispatched = [];
+  const entries = [{ type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } }];
+  const d = deps({
+    settings: { usageEndpoint: ENDPOINT, usageProjects: { 'my-repo': { usageEnabled: false } } },
+    entries,
+    dispatched,
+  });
+  assert.equal(handleSubagentStop(SUBAGENT_STOP, d).systemMessage, undefined);
+  assert.deepEqual(dispatched, []);
+});
+
+test('SubagentStop falls back to the hook input for session id, and the transcript for cwd', () => {
+  const dispatched = [];
+  const entries = [{ type: 'assistant', isSidechain: true, requestId: 'sub1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } }];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched });
+  handleSubagentStop({ ...SUBAGENT_STOP, session_id: undefined }, d);
+  assert.equal(dispatched[0].records[0].session_id, '');
+
+  const withCwd = [{ type: 'assistant', isSidechain: true, requestId: 'sub2', cwd: '/work/my-repo', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } }];
+  const d2 = deps({ settings: { usageEndpoint: ENDPOINT }, entries: withCwd, dispatched });
+  handleSubagentStop({ ...SUBAGENT_STOP, cwd: undefined }, d2);
+  assert.equal(dispatched[1].records[0].project, 'my-repo');
+});
+
+test('a second SubagentStop with no prior watermark on record starts fresh', () => {
+  const dispatched = [];
+  const entries = [{ type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } }];
+  const state = { noticeShown: true, subagentSession: 's1' };
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, entries, state, dispatched });
+  handleSubagentStop(SUBAGENT_STOP, d);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].tokens.total, 4);
+});
+
+test('handle routes UserPromptSubmit', () => {
+  const entries = [
+    ...transcript({ prompt: 'cancelled', promptId: 'p1', usages: [{ output_tokens: 7 }] }),
+    { type: 'user', promptSource: 'typed', promptId: 'p2', sessionId: 's1', cwd: '/work/my-repo', message: { content: 'next' } },
+  ];
+  assert.ok(handle(PROMPT_SUBMIT, deps({ entries })).systemMessage);
+});
+
+test('UserPromptSubmit flushes a turn the user cancelled, marked interrupted', () => {
+  const dispatched = [];
+  const entries = [
+    ...transcript({ prompt: 'cancelled', promptId: 'p1', usages: [{ output_tokens: 7 }] }),
+    { type: 'user', promptSource: 'typed', promptId: 'p2', sessionId: 's1', cwd: '/work/my-repo', message: { content: 'next' } },
+  ];
+  const result = handleUserPromptSubmit(PROMPT_SUBMIT, deps({ settings: { usageEndpoint: ENDPOINT }, entries, dispatched }));
+  assert.equal(result.systemMessage, undefined);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].records[0].tokens.total, 7);
+  assert.equal(dispatched[0].records[0].error, true);
+  assert.equal(dispatched[0].records[0].error_type, 'interrupted');
+});
+
+test('UserPromptSubmit stays quiet on the first prompt of a session', () => {
+  const d = deps({ entries: transcript({ usages: [USAGE_A] }) });
+  assert.equal(handleUserPromptSubmit(PROMPT_SUBMIT, d).systemMessage, undefined);
+});
+
+test('UserPromptSubmit does not resend a turn Stop already reported', () => {
+  const dispatched = [];
+  const d = deps({ settings: { usageEndpoint: ENDPOINT }, dispatched });
+  handleStop(STOP, d);
+
+  d.readFile = fakeReader({
+    [CONFIG]: JSON.stringify({ usageEndpoint: ENDPOINT }),
+    [TRANSCRIPT]: [
+      ...transcript({ usages: [USAGE_A] }),
+      { type: 'user', promptSource: 'typed', promptId: 'p2', sessionId: 's1', cwd: '/work/my-repo', message: { content: 'next' } },
+    ]
+      .map((e) => JSON.stringify(e))
+      .join('\n'),
+  });
+  handleUserPromptSubmit(PROMPT_SUBMIT, d);
+  assert.equal(dispatched.length, 1);
 });
 
 test('the full flow works against the real filesystem with no injected dependencies', () => {

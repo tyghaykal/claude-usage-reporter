@@ -336,14 +336,16 @@ full URL, in case yours carries credentials in the userinfo part.
 
 ## How it works
 
-Four hooks, ~600 lines of dependency-free JavaScript:
+Six hooks, ~750 lines of dependency-free JavaScript:
 
 | Hook | What it does |
 |---|---|
 | `SessionStart` | Shows the first-run notice once; flushes any queued failed pushes. |
-| `Stop` | Reads the turn's usage out of the transcript Claude Code already wrote, then prints or pushes it. |
+| `UserPromptSubmit` | Catches a turn you cancelled (Esc has no hook of its own): if the transcript shows a completed turn before the one you just typed that never got a `Stop`, it's posted here, marked `interrupted`. Silent otherwise. |
+| `Stop` | Reads the turn's usage out of the transcript Claude Code already wrote, then prints or pushes it. A turn that used more than one model (rare, but possible) is split into one payload per model. |
 | `StopFailure` | Same capture when the turn ends in an API error, with `error: true` on the payload. Still sent if the turn used zero tokens. |
-| `SessionEnd` | Last chance: if the session dies with leftover unreported usage (a cancelled turn never fires `Stop`), that usage is posted and marked `interrupted`. A clean session end sends nothing. |
+| `SubagentStop` | Captures token usage from subagents (Task-tool calls), per model, as each one finishes. |
+| `SessionEnd` | Last chance: if the session dies with leftover unreported usage, that usage is posted and marked `interrupted`. A clean session end sends nothing. |
 
 Token counts come from `~/.claude/projects/<project>/<session>.jsonl` — the local
 transcript Claude Code writes for every session. The plugin reads the `usage` block
@@ -364,12 +366,12 @@ de-duplication), `claude-usage-queue.jsonl` (failed pushes, capped at 500),
 
 ## Known limitations
 
-- **Subagent usage is not counted.** Work done inside a subagent is marked
-  `isSidechain` in the transcript and is excluded from the per-turn figure.
-- **Esc / interrupt has no hook.** Claude Code fires `StopFailure` for API errors,
-  but not when you cancel a turn. Leftover usage is only submitted if the session
-  then ends (`SessionEnd`) before another prompt overwrites it. Cancelling a turn
-  and continuing in the same session can drop that turn's tokens.
+- **Esc / interrupt has no hook of its own.** Claude Code fires `StopFailure` for
+  API errors, but not when you cancel a turn. `UserPromptSubmit` catches it as
+  soon as you type the next prompt in the same session, and `SessionEnd` catches
+  it if you don't. Cancelling two turns in a row without ever completing one in
+  between still drops the first — only the turn immediately before the newest
+  prompt is checked.
 - **Failed pushes are dropped after 500 queued records**, oldest first.
 - **Costs are estimates.** See the pricing note above.
 - Pricing lives in `src/pricing.json` and needs updating when Anthropic changes

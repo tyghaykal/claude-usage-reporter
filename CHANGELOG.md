@@ -6,6 +6,28 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-08-31
+
+🔍 **Data captured:** subagent (Task-tool) usage is now reported, a turn that
+mixes models is split into one payload per model instead of being folded into
+whichever model's assistant reply came last, and a cancelled turn is now
+usually caught right away instead of only at session end.
+
+### Added
+- `SubagentStop` hook: reports token usage from subagents as each one
+  finishes, per model. Previously this usage was dropped entirely — it's
+  marked `isSidechain` in the transcript and was excluded from every figure.
+- `UserPromptSubmit` hook: catches a turn you cancelled (Esc has no hook of
+  its own) as soon as you type the next prompt, instead of only at
+  `SessionEnd` — which may be a long time away, or never, if the session
+  keeps going. Marked `interrupted`, same as the `SessionEnd` case.
+
+### Fixed
+- A turn that used more than one model (rare, but possible in the main
+  conversation) no longer reports every token under whichever model produced
+  the turn's last reply. Each model's usage is now its own payload, so cost
+  estimates split correctly by model too.
+
 ## [0.2.0] — 2026-08-30
 
 ### Added
