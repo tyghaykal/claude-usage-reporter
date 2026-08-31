@@ -10,6 +10,7 @@ import { loadConfig, logPath, queuePath, resolveProjectConfig, resolveProjectLab
 import { deriveProject } from './project.mjs';
 import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
+import { resolveRateSync, warmRate } from './currency.mjs';
 import { dispatch } from './sender.mjs';
 import { appendLog, drain, fsDefaults, readJson, writeJson } from './store.mjs';
 import { EMPTY_TOKENS, extractSubagentUsage, extractTurn, previousTurn, readTranscript, sessionSummary } from './transcript.mjs';
@@ -85,6 +86,13 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
   }
 
   if (shouldDisplay(projectConfig)) {
+    // Resolve the display rate synchronously (manual override or fresh cache)
+    // so the report never blocks on the network, then warm the cache in the
+    // background so the next report has a live rate for this currency.
+    const rate = resolveRateSync(projectConfig.usageCurrency, { override: projectConfig.usageCurrencyRate });
+    const currency = { code: projectConfig.usageCurrency, rate };
+    warmRate(projectConfig.usageCurrency, { override: projectConfig.usageCurrencyRate });
+
     models.forEach(({ model, tokens }, i) => {
       messages.push(
         formatReport({
@@ -95,6 +103,7 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
           session: i === models.length - 1 ? sessionSummary(entries) : null,
           endpointConfigured: Boolean(projectConfig.usageEndpoint),
           models: deps.models || loadPricing(),
+          currency,
           error,
         }),
       );

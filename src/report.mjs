@@ -5,6 +5,7 @@
 
 import { COMMAND } from './config.mjs';
 import { estimateCost } from './pricing.mjs';
+import { convertCost, formatCurrency, normalizeCurrency } from './currency.mjs';
 
 const ERROR_TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 const ERROR_DETAILS_LIMIT = 300;
@@ -63,7 +64,24 @@ export function formatUtc(iso) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 }
 
-export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models, error }) {
+/**
+ * Renders the USD estimate, plus the live-translated figure when a non-USD
+ * currency is configured and a rate is available. USD is always shown (it is
+ * the list-price basis); the translation is appended as `≈ <amount>`.
+ *
+ * `currency` is `{ code, rate }` where `rate` is units of `code` per 1 USD;
+ * when omitted, or when no rate resolved (offline), only USD is shown.
+ */
+export function formatCostLine(usd, currency) {
+  const base = `$${usd.toFixed(4)}`;
+  const code = currency && currency.code ? normalizeCurrency(currency.code) : 'USD';
+  if (code === 'USD') return base;
+  const converted = convertCost(usd, currency.rate);
+  if (converted === null) return base; // no live rate — keep USD only, never block
+  return `${base} ≈ ${formatCurrency(converted, code)}`;
+}
+
+export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models, error, currency }) {
   const lines = [
     `[${project}] ${formatUtc(datetime)}${model ? ` · ${model}` : ''}`,
     `Tokens — input: ${n(tokens.input)} | cache read: ${n(tokens.cache_read)} | ` +
@@ -76,7 +94,7 @@ export function formatReport({ project, datetime, tokens, model, session, endpoi
   }
 
   const cost = estimateCost(model, tokens, models);
-  if (cost !== null) lines.push(`Est. cost (list price, estimate only): $${cost.toFixed(4)}`);
+  if (cost !== null) lines.push(`Est. cost (list price, estimate only): ${formatCostLine(cost, currency)}`);
 
   if (session) {
     lines.push(

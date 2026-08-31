@@ -6,6 +6,20 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Live currency translation for the cost estimate.** Set `usageCurrency` to any
+  3-letter ISO code (e.g. `IDR`) and the terminal report appends a live-converted
+  figure next to the USD estimate — `$0.0142 ≈ Rp231`. Rates are fetched from a
+  free FX endpoint, cached in-process for an hour, and refreshed in the background
+  so a report never blocks on the network; when no rate is available (offline) the
+  report just shows USD. `usageCurrencyRate` optionally pins a manual rate that
+  always wins and skips the fetch entirely. Translation is terminal-display only —
+  the `usageEndpoint` payload still sends raw token counts. New settings:
+  `usageCurrency` (default `USD`) and `usageCurrencyRate`, with
+  `CC_USAGE_CURRENCY` / `CC_USAGE_CURRENCY_RATE` env vars.
+
 ## [0.3.0] — 2026-08-31
 
 🔍 **Data captured:** subagent (Task-tool) usage is now reported, a turn that

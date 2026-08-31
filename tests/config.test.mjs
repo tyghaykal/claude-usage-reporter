@@ -293,3 +293,28 @@ test('maskConfig hides every secret and leaves the rest readable', () => {
   });
   assert.equal(JSON.stringify(masked).includes('super-secret'), false);
 });
+
+test('usageCurrency defaults to USD and accepts a 3-letter code', () => {
+  const { config } = load({});
+  assert.equal(config.usageCurrency, 'USD');
+  const { config: idr } = load({ [CONFIG]: JSON.stringify({ usageCurrency: 'idr' }) });
+  assert.equal(idr.usageCurrency, 'IDR');
+  const { config: env_ } = load({}, { CC_USAGE_CURRENCY: 'eur' });
+  assert.equal(env_.usageCurrency, 'EUR');
+});
+
+test('usageCurrency falls back to USD with a warning on an invalid code', () => {
+  const { config, warnings } = load({ [CONFIG]: JSON.stringify({ usageCurrency: 'Rupiah' }) });
+  assert.equal(config.usageCurrency, 'USD');
+  assert.match(warnings[0], /Unknown usageCurrency/);
+});
+
+test('usageCurrencyRate accepts a positive number and warns on a bad value', () => {
+  const { config } = load({ [CONFIG]: JSON.stringify({ usageCurrencyRate: 16300 }) });
+  assert.equal(config.usageCurrencyRate, 16300);
+  const { config: env_ } = load({}, { CC_USAGE_CURRENCY_RATE: '15900' });
+  assert.equal(env_.usageCurrencyRate, 15900);
+  const { config: bad, warnings } = load({ [CONFIG]: JSON.stringify({ usageCurrencyRate: 'nope' }) });
+  assert.equal(bad.usageCurrencyRate, '');
+  assert.match(warnings[0], /usageCurrencyRate/);
+});

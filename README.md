@@ -257,6 +257,34 @@ both are present. Changes take effect on the next prompt — no reinstall.
 | `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
 | `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |
 | `usageTimeoutMs` | `CC_USAGE_TIMEOUT_MS` | `5000` | Per-request timeout |
+| `usageCurrency` | `CC_USAGE_CURRENCY` | `USD` | Display currency for the cost estimate — any 3-letter ISO code (e.g. `IDR`). `USD` disables translation. See *Currency translation* below. |
+| `usageCurrencyRate` | `CC_USAGE_CURRENCY_RATE` | — | Optional manual USD→currency rate override. When set, it always wins and no live rate is fetched. |
+
+### Currency translation
+
+The price table is in USD. Set `usageCurrency` to any 3-letter ISO code and the
+terminal report appends a **live-translated** figure next to the USD estimate:
+
+```text
+Est. cost (list price, estimate only): $0.0142 ≈ Rp231
+```
+
+- **Live rates.** Rates are fetched from a free FX endpoint (`exchangerate.host`),
+  cached in-process for an hour, and refreshed in the background — a report never
+  blocks on the network. If no rate is available (e.g. fully offline on first run),
+  the report simply shows the USD estimate and tries again next prompt.
+- **Pin your own rate.** Set `usageCurrencyRate` to a positive number (e.g. your
+  bank's settlement rate) and it always wins — no fetch happens at all. Useful for
+  offline work or for matching an internal exchange rate.
+
+```bash
+/claude-usage-reporter:usage-config set usageCurrency IDR          # live USD→IDR
+/claude-usage-reporter:usage-config set usageCurrencyRate 16300    # optional: pin the rate
+```
+
+Translation is **terminal-display only** — the JSON payload sent to `usageEndpoint`
+still reports the raw token counts, not a converted amount, so your backend keeps a
+single currency to reason about.
 
 ### `usageDisplay`
 

@@ -48,6 +48,8 @@ export const ENV_KEYS = {
   usagePromptMode: 'CC_USAGE_PROMPT_MODE',
   usageRetry: 'CC_USAGE_RETRY',
   usageTimeoutMs: 'CC_USAGE_TIMEOUT_MS',
+  usageCurrency: 'CC_USAGE_CURRENCY',
+  usageCurrencyRate: 'CC_USAGE_CURRENCY_RATE',
 };
 
 export const DEFAULTS = {
@@ -80,6 +82,14 @@ export const DEFAULTS = {
   usagePromptMode: 'full',
   usageRetry: true,
   usageTimeoutMs: 5000,
+  // Display currency for the cost estimate. The price table is USD; any other
+  // 3-letter code (e.g. IDR) translates the estimate live at report time.
+  // 'USD' (default) disables translation entirely.
+  usageCurrency: 'USD',
+  // Optional manual USD→currency rate override. When set to a positive number
+  // it always wins and no FX fetch happens — useful for pinning a settlement
+  // rate or working fully offline. Empty/null means "fetch live".
+  usageCurrencyRate: '',
 };
 
 /** Directory holding the plugin's own files (config, state, queue, log). */
@@ -178,6 +188,22 @@ function normalizeTimeout(value, warnings) {
   return DEFAULTS.usageTimeoutMs;
 }
 
+function normalizeCurrencyCode(value, warnings) {
+  const raw = String(value).trim().toUpperCase();
+  if (raw === '' || raw === 'USD') return 'USD';
+  if (/^[A-Z]{3}$/.test(raw)) return raw;
+  warnings.push(`Unknown usageCurrency "${value}" — falling back to "USD" (no translation).`);
+  return 'USD';
+}
+
+function normalizeCurrencyRate(value, warnings) {
+  if (value === '' || value === null || value === undefined) return '';
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return n;
+  warnings.push(`usageCurrencyRate "${value}" is not a positive number — ignoring it (will fetch live).`);
+  return '';
+}
+
 /** The routing/behaviour fields — shared by the global config and any per-project override. */
 function normalizeCore(config, warnings) {
   if (config.usageEndpoint) config.usageEndpoint = normalizeEndpoint(config.usageEndpoint, warnings);
@@ -191,6 +217,8 @@ function normalizeCore(config, warnings) {
   config.usageEnabled = normalizeBool(config.usageEnabled);
   config.usageTimeoutMs = normalizeTimeout(config.usageTimeoutMs, warnings);
   config.usageUser = String(config.usageUser);
+  config.usageCurrency = normalizeCurrencyCode(config.usageCurrency, warnings);
+  config.usageCurrencyRate = normalizeCurrencyRate(config.usageCurrencyRate, warnings);
   return config;
 }
 

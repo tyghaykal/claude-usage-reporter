@@ -227,3 +227,36 @@ test('every command we tell the user to type is plugin-namespaced', () => {
     }
   }
 });
+
+test('formatReport appends the live IDR translation next to the USD estimate', () => {
+  const text = formatReport({
+    project: 'p',
+    datetime: '2026-08-28T10:15:00.000Z',
+    tokens: { input: 1e6, cache_read: 0, cache_write: 0, output: 1e6, total: 2e6 },
+    model: 'm',
+    endpointConfigured: true,
+    models: { m: { input: 3, cache_write: 0, cache_read: 0, output: 15 } },
+    currency: { code: 'IDR', rate: 16300 },
+  });
+  // USD estimate: (3 + 15) / 1e6 * 1e6 = 18 USD → ≈ Rp293,400
+  assert.match(text, /\$18\.0000 ≈ Rp293,400/);
+});
+
+test('formatReport keeps USD only when no rate is available (offline) or currency is USD', () => {
+  const base = {
+    project: 'p',
+    datetime: '2026-08-28T10:15:00.000Z',
+    tokens: { input: 1e6, cache_read: 0, cache_write: 0, output: 0, total: 1e6 },
+    model: 'm',
+    endpointConfigured: true,
+    models: { m: { input: 3, cache_write: 0, cache_read: 0, output: 0 } },
+  };
+  const offline = formatReport({ ...base, currency: { code: 'IDR', rate: null } });
+  assert.match(offline, /\$3\.0000/);
+  assert.doesNotMatch(offline, /≈/);
+  const usd = formatReport({ ...base, currency: { code: 'USD', rate: 1 } });
+  assert.doesNotMatch(usd, /≈/);
+  const none = formatReport(base); // no currency at all — backwards compatible
+  assert.match(none, /\$3\.0000/);
+  assert.doesNotMatch(none, /≈/);
+});
