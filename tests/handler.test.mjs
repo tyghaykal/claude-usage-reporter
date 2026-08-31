@@ -117,7 +117,7 @@ test('with no endpoint, Stop prints a per-call report and sends nothing', () => 
   const d = deps({ dispatched });
   const { systemMessage } = handleStop(STOP, d);
   assert.deepEqual(dispatched, []);
-  assert.match(systemMessage, /^\[my-repo] 2026-08-28 10:15:00 UTC · claude-sonnet-5$/m);
+  assert.match(systemMessage, /^\[my-repo] 2026-08-28 10:15:00 UTC · claude-sonnet-5 · claude-session$/m);
   assert.match(systemMessage, /input: 100 \| cache read: 800 \| cache write: 200 \| output: 50 \| total: 1,150/);
   assert.match(systemMessage, /Session running total: 1,150 tokens across 1 prompt/);
   assert.match(systemMessage, /No usage endpoint configured/);
@@ -138,6 +138,7 @@ test('with an endpoint, Stop pushes the documented payload and stays silent', ()
       tokens: { input: 100, cache_read: 800, cache_write: 200, output: 50, total: 1150 },
       model: 'claude-sonnet-5',
       user: 'ana',
+      provider: 'claude-session',
     },
   ]);
 });

@@ -82,6 +82,22 @@ export const DEFAULTS = {
   usageTimeoutMs: 5000,
 };
 
+/**
+ * Which Anthropic endpoint produced this turn: the API base URL (scheme +
+ * host, credentials/path stripped) when `ANTHROPIC_BASE_URL` points at a
+ * custom API, or `claude-session` for Claude Code's own session auth.
+ */
+export function resolveProvider(env = process.env) {
+  const base = env.ANTHROPIC_BASE_URL;
+  if (!base) return 'claude-session';
+  try {
+    const url = new URL(base);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return 'claude-session';
+  }
+}
+
 /** Directory holding the plugin's own files (config, state, queue, log). */
 export function dataDir(env = process.env) {
   return env.CLAUDE_USAGE_HOME || join(homedir(), '.claude');

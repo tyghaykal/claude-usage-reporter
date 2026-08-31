@@ -6,6 +6,17 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] — 2026-08-31
+
+🔍 **Data captured:** every report and payload now includes `provider` —
+`claude-session` for Claude Code's own session auth, or the scheme+host of
+`ANTHROPIC_BASE_URL` if you've pointed Claude Code at your own API gateway
+(e.g. `https://api.amanai.dev`).
+
+### Added
+- `provider` field on the terminal report and the JSON payload, derived from
+  `ANTHROPIC_BASE_URL` at report time — no new setting to configure.
+
 ## [0.3.0] — 2026-08-31
 
 🔍 **Data captured:** subagent (Task-tool) usage is now reported, a turn that

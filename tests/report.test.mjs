@@ -24,6 +24,7 @@ test('buildPayload matches the documented shape', () => {
     tokens: TOKENS,
     model: 'claude-sonnet-5',
     user: 'ana',
+    provider: 'claude-session',
     promptMode: 'full',
   });
   assert.deepEqual(payload, {
@@ -35,6 +36,7 @@ test('buildPayload matches the documented shape', () => {
     tokens: TOKENS,
     model: 'claude-sonnet-5',
     user: 'ana',
+    provider: 'claude-session',
   });
 });
 
@@ -48,11 +50,13 @@ test('buildPayload omits optional fields and applies the prompt mode', () => {
     tokens: TOKENS,
     model: '',
     user: '',
+    provider: '',
     promptMode: 'none',
   });
   assert.equal('project_label' in payload, false);
   assert.equal('model' in payload, false);
   assert.equal('user' in payload, false);
+  assert.equal('provider' in payload, false);
   assert.equal(payload.prompt, '');
 });
 

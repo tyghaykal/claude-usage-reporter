@@ -18,6 +18,7 @@ After every prompt, the plugin records:
 | `prompt` | **the full text of the prompt you typed** |
 | `session_id` | `abc-123` |
 | `model` | `claude-sonnet-5` |
+| `provider` | `claude-session`, or the host of `ANTHROPIC_BASE_URL` if you've set one (e.g. `https://api.amanai.dev`) |
 | `tokens` | `input`, `cache_read`, `cache_write`, `output`, `total` |
 | `error` | present only on a failed or interrupted turn — see below |
 
@@ -106,7 +107,7 @@ upgrading.
 With no configuration, every prompt ends with:
 
 ```
-[my-project] 2026-08-28 10:15:00 UTC · claude-sonnet-5
+[my-project] 2026-08-28 10:15:00 UTC · claude-sonnet-5 · claude-session
 Tokens — input: 1,234 | cache read: 800 | cache write: 200 | output: 450 | total: 2,684
 Est. cost (list price, estimate only): $0.0142
 Session running total: 14,320 tokens across 6 prompts
@@ -141,6 +142,9 @@ Once set, terminal output turns off and each prompt POSTs this JSON instead:
   "prompt": "fix the login bug",
   "session_id": "abc-123",
   "model": "claude-sonnet-5",
+  // "claude-session" for Claude Code's own session auth, or the scheme+host of
+  // ANTHROPIC_BASE_URL if you've pointed Claude Code at your own API gateway.
+  "provider": "claude-session",
   "tokens": {
     "input": 1234,
     "cache_read": 800,

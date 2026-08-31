@@ -12,6 +12,7 @@ import {
   readConfigFile,
   resolveProjectConfig,
   resolveProjectLabel,
+  resolveProvider,
   shouldDisplay,
   statePath,
 } from '../src/config.mjs';
@@ -138,6 +139,13 @@ test('shouldDisplay implements the auto/always/off rules of FR-17', () => {
   assert.equal(shouldDisplay({ usageDisplay: 'always', usageEndpoint: 'https://x/' }), true);
   assert.equal(shouldDisplay({ usageDisplay: 'auto', usageEndpoint: '' }), true);
   assert.equal(shouldDisplay({ usageDisplay: 'auto', usageEndpoint: 'https://x/' }), false);
+});
+
+test('resolveProvider reports the API base URL host, or claude-session with none set', () => {
+  assert.equal(resolveProvider({}), 'claude-session');
+  assert.equal(resolveProvider({ ANTHROPIC_BASE_URL: 'https://api.amanai.dev' }), 'https://api.amanai.dev');
+  assert.equal(resolveProvider({ ANTHROPIC_BASE_URL: 'https://9.haykal.my.id/v1/' }), 'https://9.haykal.my.id');
+  assert.equal(resolveProvider({ ANTHROPIC_BASE_URL: 'not a url' }), 'claude-session');
 });
 
 test('authHeaders builds the right shape for each of the five auth types', () => {

@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, logPath, queuePath, resolveProjectConfig, resolveProjectLabel, shouldDisplay, statePath } from './config.mjs';
+import { loadConfig, logPath, queuePath, resolveProjectConfig, resolveProjectLabel, resolveProvider, shouldDisplay, statePath } from './config.mjs';
 import { deriveProject } from './project.mjs';
 import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
@@ -61,6 +61,7 @@ function emptyTurn(input) {
  * last). Shared by the main-turn and subagent capture paths.
  */
 function deliverUsage({ deps, notice, projectConfig, projectLabel, project, datetime, prompt, sessionId, models, error, messages, entries }) {
+  const provider = resolveProvider(deps.env);
   // FR-16 / PD-1: the first run discloses before it can ever transmit.
   if (projectConfig.usageEndpoint && !notice) {
     const payloads = models.map(({ model, tokens }) =>
@@ -73,6 +74,7 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
         tokens,
         model,
         user: projectConfig.usageUser,
+        provider,
         promptMode: projectConfig.usagePromptMode,
         error,
       }),
@@ -92,6 +94,7 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
           datetime,
           tokens,
           model,
+          provider,
           session: i === models.length - 1 ? sessionSummary(entries) : null,
           endpointConfigured: Boolean(projectConfig.usageEndpoint),
           models: deps.models || loadPricing(),
