@@ -293,3 +293,15 @@ test('maskConfig hides every secret and leaves the rest readable', () => {
   });
   assert.equal(JSON.stringify(masked).includes('super-secret'), false);
 });
+
+test('usageAmanaiKey accepts a value, is masked, and honours the env var', () => {
+  const { config } = load({});
+  assert.equal(config.usageAmanaiKey, '');
+  const { config: withKey } = load({ [CONFIG]: JSON.stringify({ usageAmanaiKey: 'sk-test-123' }) });
+  assert.equal(withKey.usageAmanaiKey, 'sk-test-123');
+  const { config: env_ } = load({}, { CC_USAGE_AMANAI_KEY: 'sk-env' });
+  assert.equal(env_.usageAmanaiKey, 'sk-env');
+  // maskConfig hides the secret
+  const masked = maskConfig(withKey);
+  assert.equal(masked.usageAmanaiKey, '***set***');
+});

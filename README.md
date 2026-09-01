@@ -257,6 +257,36 @@ both are present. Changes take effect on the next prompt — no reinstall.
 | `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
 | `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |
 | `usageTimeoutMs` | `CC_USAGE_TIMEOUT_MS` | `5000` | Per-request timeout |
+| `usageAmanaiKey` | `CC_USAGE_AMANAI_KEY` | — | amanai API key used to attribute exact credit costs from the live usage log. Empty = credits not shown. Secret — masked, never echoed. See *amanai credits* below. |
+
+### amanai credits
+
+Set `usageAmanaiKey` to your amanai API key and the terminal report shows the
+**exact credit cost** of each request, attributed from the live usage log at
+`https://api.amanai.dev/v1/usage`:
+
+```text
+Credits (amanai usage log): 143,783
+```
+
+- **Authoritative.** The amanai usage endpoint returns the real `credits` figure
+  per request, so this is not an estimate (unlike the USD list-price line above).
+- **Opt-in.** With no `usageAmanaiKey` set, no amanai request is made and no
+  credits line is shown — the report behaves exactly as before.
+- **Non-blocking.** The key is fetched in the background and cached for ~1 minute;
+  the report itself never waits on the network (a Claude hook must never block).
+  If the fetch fails or the log window has rolled past the matched request, the
+  credits line is simply omitted and the USD estimate is still shown.
+- **Matching.** A local request is matched to an amanai usage entry by model +
+  token counts (`input`, `output`, `cache_read`), so credits attribute correctly
+  even across mixed-model turns.
+
+```bash
+/claude-usage-reporter:usage-config set usageAmanaiKey sk-your-key   # enable credits
+```
+
+Credits are **terminal-display only** — the JSON payload sent to `usageEndpoint`
+is unchanged and still carries raw token counts.
 
 ### `usageDisplay`
 

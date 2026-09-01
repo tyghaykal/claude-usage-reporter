@@ -29,6 +29,7 @@ export const SECRET_KEYS = new Set([
   'usageHeaderValue',
   'usageKeyIdValue',
   'usageKeySecretValue',
+  'usageAmanaiKey',
 ]);
 
 /** Config key -> environment variable fallback. */
@@ -48,6 +49,7 @@ export const ENV_KEYS = {
   usagePromptMode: 'CC_USAGE_PROMPT_MODE',
   usageRetry: 'CC_USAGE_RETRY',
   usageTimeoutMs: 'CC_USAGE_TIMEOUT_MS',
+  usageAmanaiKey: 'CC_USAGE_AMANAI_KEY',
 };
 
 export const DEFAULTS = {
@@ -80,6 +82,10 @@ export const DEFAULTS = {
   usagePromptMode: 'full',
   usageRetry: true,
   usageTimeoutMs: 5000,
+  // amanai API key used to fetch the live usage log (https://api.amanai.dev/v1/usage)
+  // and attribute exact credit costs to each request. Empty = credits not shown.
+  // This is a secret — it is masked in `maskConfig` and never echoed to the user.
+  usageAmanaiKey: '',
 };
 
 /** Directory holding the plugin's own files (config, state, queue, log). */

@@ -6,6 +6,18 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **amanai credit attribution.** Set `usageAmanaiKey` to an amanai API key and
+  the terminal report shows the **exact credit cost** per request, attributed
+  from the live usage log at `https://api.amanai.dev/v1/usage` (matched by model
+  + token counts). Opt-in: with no key set, no amanai request is made and no
+  credits line is shown. Non-blocking — fetched in the background and cached
+  ~1 min; the report never waits on the network. Credits are terminal-display
+  only; the `usageEndpoint` payload is unchanged. New setting `usageAmanaiKey`
+  with `CC_USAGE_AMANAI_KEY` env var; it is a secret, masked in `maskConfig`.
+
 ## [0.3.0] — 2026-08-31
 
 🔍 **Data captured:** subagent (Task-tool) usage is now reported, a turn that

@@ -10,6 +10,7 @@ import { loadConfig, logPath, queuePath, resolveProjectConfig, resolveProjectLab
 import { deriveProject } from './project.mjs';
 import { loadPricing } from './pricing.mjs';
 import { FIRST_RUN_NOTICE, buildPayload, formatReport } from './report.mjs';
+import { fetchUsage, findCredits, peekUsageCache } from './credits.mjs';
 import { dispatch } from './sender.mjs';
 import { appendLog, drain, fsDefaults, readJson, writeJson } from './store.mjs';
 import { EMPTY_TOKENS, extractSubagentUsage, extractTurn, previousTurn, readTranscript, sessionSummary } from './transcript.mjs';
@@ -85,6 +86,15 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
   }
 
   if (shouldDisplay(projectConfig)) {
+    // Optional amanai credits: only when the user has configured an amanai API
+    // key. Resolved from the cached live usage log WITHOUT awaiting the network
+    // (the hook must never block). A background warm keeps the cache fresh.
+    let credits = null;
+    if (projectConfig.usageAmanaiKey) {
+      warmUsage(projectConfig.usageAmanaiKey);
+      credits = getCachedCredits(models);
+    }
+
     models.forEach(({ model, tokens }, i) => {
       messages.push(
         formatReport({
@@ -95,11 +105,31 @@ function deliverUsage({ deps, notice, projectConfig, projectLabel, project, date
           session: i === models.length - 1 ? sessionSummary(entries) : null,
           endpointConfigured: Boolean(projectConfig.usageEndpoint),
           models: deps.models || loadPricing(),
+          credits: credits ? credits[i] : null,
           error,
         }),
       );
     });
   }
+}
+
+/**
+ * Fetches the live amanai usage log in the background (fire-and-forget) so the
+ * in-process cache is fresh for the next report. Never awaited, never throws.
+ */
+function warmUsage(apiKey) {
+  fetchUsage(apiKey).catch(() => {});
+}
+
+/**
+ * Resolves per-model credit costs from the current in-memory usage cache,
+ * without touching the network. Returns an array aligned with `models`, or
+ * null when no usage snapshot is cached yet.
+ */
+function getCachedCredits(models) {
+  const usage = peekUsageCache();
+  if (!usage) return null;
+  return models.map(({ model, tokens }) => findCredits(usage, model, tokens));
 }
 
 /**

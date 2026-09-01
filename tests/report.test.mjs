@@ -227,3 +227,20 @@ test('every command we tell the user to type is plugin-namespaced', () => {
     }
   }
 });
+
+test('formatReport shows amanai credits when provided and omits them otherwise', () => {
+  const base = {
+    project: 'p',
+    datetime: '2026-08-28T10:15:00.000Z',
+    tokens: { input: 1e6, cache_read: 0, cache_write: 0, output: 1e6, total: 2e6 },
+    model: 'm',
+    endpointConfigured: true,
+    models: { m: { input: 3, cache_write: 0, cache_read: 0, output: 15 } },
+  };
+  const withCredits = formatReport({ ...base, credits: 143783 });
+  assert.match(withCredits, /Credits \(amanai usage log\): 143,783/);
+  const without = formatReport(base); // no credits key
+  assert.doesNotMatch(without, /Credits \(amanai/);
+  const nullCredits = formatReport({ ...base, credits: null });
+  assert.doesNotMatch(nullCredits, /Credits \(amanai/);
+});

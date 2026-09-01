@@ -63,7 +63,7 @@ export function formatUtc(iso) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
 }
 
-export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models, error }) {
+export function formatReport({ project, datetime, tokens, model, session, endpointConfigured, models, error, credits }) {
   const lines = [
     `[${project}] ${formatUtc(datetime)}${model ? ` · ${model}` : ''}`,
     `Tokens — input: ${n(tokens.input)} | cache read: ${n(tokens.cache_read)} | ` +
@@ -77,6 +77,11 @@ export function formatReport({ project, datetime, tokens, model, session, endpoi
 
   const cost = estimateCost(model, tokens, models);
   if (cost !== null) lines.push(`Est. cost (list price, estimate only): $${cost.toFixed(4)}`);
+
+  // Exact credit cost attributed from the live amanai usage log (when configured).
+  if (credits !== undefined && credits !== null) {
+    lines.push(`Credits (amanai usage log): ${credits.toLocaleString('en-US')}`);
+  }
 
   if (session) {
     lines.push(
