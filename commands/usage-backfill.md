@@ -11,6 +11,11 @@ Report the command output above to the user verbatim, then stop. Without
 user seems to expect something was sent. Do not re-run with different flags
 unless the user asks for that.
 
+**`--send` without `--yes` always reports "Cancelled" here** — this command
+runs non-interactively, so there's no terminal for the confirmation prompt to
+wait on. That is not a failure to retry; it means the user must decide and
+re-run with `--yes` themselves once they've seen the preview.
+
 Examples:
 - `/claude-usage-reporter:usage-backfill --since 2026-09-01` — preview everything since Sept 1
 - `/claude-usage-reporter:usage-backfill --since 2026-09-01 --list` — list individual turns with their keys, to pick from

@@ -38,11 +38,20 @@ Skipped (zero tokens): 2
 /claude-usage-reporter:usage-backfill --since 2026-09-01 --send
 ```
 
-You'll be asked to confirm — it shows the record count and the endpoint's
-host, never the full URL:
+Run from an interactive terminal, you'll be asked to confirm — it shows the
+record count and the endpoint's host, never the full URL:
 
 ```
 Send 17 records to myteam.example.com? [y/N]
+```
+
+Run as the `/claude-usage-reporter:usage-backfill` slash command, there's no
+terminal for that prompt to wait on — it always reports "Cancelled" instead
+of hanging. Decide from the preview, then add `--yes` yourself once you're
+ready:
+
+```
+/claude-usage-reporter:usage-backfill --since 2026-09-01 --send --yes
 ```
 
 ```

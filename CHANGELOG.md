@@ -6,6 +6,16 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] — 2026-09-29
+
+### Fixed
+- `/usage-backfill --send` without `--yes` hung indefinitely when run as a
+  slash command. Claude Code executes it non-interactively, so the
+  confirmation prompt had no terminal to wait on. It now detects a
+  non-interactive stdin and reports "Cancelled" immediately, telling you to
+  add `--yes` once you're ready — no change to what is captured or where
+  it's sent.
+
 ## [0.4.0] — 2026-09-29
 
 🔍 **Data captured:** a record sent by the new `/usage-backfill` command
