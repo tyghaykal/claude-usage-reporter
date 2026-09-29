@@ -30,7 +30,7 @@ export function errorMark(error) {
   return details ? { type, details } : { type };
 }
 
-export function buildPayload({ project, projectLabel, datetime, prompt, sessionId, tokens, model, user, provider, promptMode, error }) {
+export function buildPayload({ project, projectLabel, datetime, prompt, sessionId, tokens, model, user, provider, promptMode, error, turnId }) {
   const payload = {
     project,
     datetime,
@@ -48,6 +48,9 @@ export function buildPayload({ project, projectLabel, datetime, prompt, sessionI
   if (model) payload.model = model;
   if (user) payload.user = user;
   if (provider) payload.provider = provider;
+  // 🔍 backfill-only: a stable id so a receiver can dedup a resend. Never set
+  // by the live hook, so its payload shape is unchanged.
+  if (turnId) payload.turn_id = turnId;
   const mark = errorMark(error);
   if (mark) {
     payload.error = true;
