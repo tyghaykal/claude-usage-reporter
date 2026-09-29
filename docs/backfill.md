@@ -38,21 +38,10 @@ Skipped (zero tokens): 2
 /claude-usage-reporter:usage-backfill --since 2026-09-01 --send
 ```
 
-Run from an interactive terminal, you'll be asked to confirm — it shows the
-record count and the endpoint's host, never the full URL:
-
-```
-Send 17 records to myteam.example.com? [y/N]
-```
-
-Run as the `/claude-usage-reporter:usage-backfill` slash command, there's no
-terminal for that prompt to wait on — it always reports "Cancelled" instead
-of hanging. Decide from the preview, then add `--yes` yourself once you're
-ready:
-
-```
-/claude-usage-reporter:usage-backfill --since 2026-09-01 --send --yes
-```
+`--send` is the confirmation — sending starts immediately, no prompt. The
+preview step above (run without `--send`) is the safety net; decide there,
+then add `--send` when you mean it. `--yes` is still accepted for
+compatibility, but does nothing on its own.
 
 ```
 Sent: 17
@@ -76,8 +65,8 @@ the main [README](../README.md#how-it-works).
 | `--turn KEY` | yes | Only these exact turns — see *Picking individual turns* below |
 | `--include-disabled` | no | Also include projects with `usageEnabled: false` |
 | `--list` | no | Preview as one line per turn, with its key, instead of the grouped summary |
-| `--send` | no | Actually push (default is preview only) |
-| `--yes` | no | Skip the confirmation prompt (only meaningful with `--send`) |
+| `--send` | no | Push immediately — no confirmation prompt (default is preview only) |
+| `--yes` | no | Accepted for backwards compatibility; has no effect (`--send` alone is enough) |
 | `--force` | no | Resend turns already recorded as backfilled |
 
 ## Picking individual turns
@@ -124,7 +113,7 @@ date includes the *whole* day, up to `23:59:59.999` local time.
 /claude-usage-reporter:usage-backfill --project my-repo --send
 
 # One session
-/claude-usage-reporter:usage-backfill --session abc-123 --send --yes
+/claude-usage-reporter:usage-backfill --session abc-123 --send
 
 # Resend a day you already backfilled (e.g. you pointed the endpoint elsewhere)
 /claude-usage-reporter:usage-backfill --since 2026-09-01 --until 2026-09-01 --send --force
@@ -134,7 +123,7 @@ Or run it directly, outside a Claude Code session, from a local checkout of
 this repository:
 
 ```bash
-node bin/backfill.mjs --since 2026-09-01 --send --yes
+node bin/backfill.mjs --since 2026-09-01 --send
 ```
 
 ## How duplicates are avoided

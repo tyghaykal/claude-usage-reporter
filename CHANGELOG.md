@@ -6,6 +6,16 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] — 2026-09-29
+
+### Changed
+- **`/usage-backfill --send` no longer asks for confirmation.** `--send` is
+  itself the deliberate, explicit acknowledgment — requiring a separate
+  `--yes` on top of it was redundant, and (per 0.4.1) impossible to satisfy
+  interactively when run as a slash command anyway. The preview step (run
+  without `--send`) remains the way to review before committing. `--yes` is
+  still accepted, for anything already scripting it, but does nothing.
+
 ## [0.4.1] — 2026-09-29
 
 ### Fixed

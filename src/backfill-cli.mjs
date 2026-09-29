@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { COMMAND, loadConfig, statePath } from './config.mjs';
 import { collectRecords, formatList, formatPreview, markReported, sendRecords } from './backfill.mjs';
-import { postUsage, safeTarget } from './sender.mjs';
+import { postUsage } from './sender.mjs';
 import { fsDefaults, readJson } from './store.mjs';
 
 const USAGE = [
@@ -18,8 +18,8 @@ const USAGE = [
   '  Without --send: preview only, grouped by project then session. No network calls.',
   '  --list             preview as one line per turn, with its key — use this to find --turn values',
   '  --turn KEY         repeatable; only these exact turns, by the key --list prints ("sessionId:promptId")',
-  '  --send             push the selected records',
-  '  --yes              skip the confirmation prompt (only with --send)',
+  '  --send             push the selected records — sending starts immediately, no confirmation prompt',
+  '  --yes              accepted for backwards compatibility; has no effect (--send alone is enough)',
   '  --force            resend turns already recorded as backfilled',
   '  --since / --until  ISO date or datetime; a bare date is local time, --until includes the whole day',
   '  --project NAME     repeatable; only these projects',
@@ -59,7 +59,6 @@ export async function runBackfillCli(argv, {
   now = () => new Date(),
   exists,
   listFs,
-  confirm, // async ({ count, host }) => boolean — required when --send and not --yes
 } = {}) {
   const parsed = parseArgs(argv);
   if (parsed.help) return { text: USAGE, code: 0 };
@@ -90,12 +89,6 @@ export async function runBackfillCli(argv, {
   const sendable = records.filter((r) => !r.skip && (flags.force || !r.alreadyReported));
   if (sendable.length === 0) {
     return { text: 'Nothing to send.\n\n' + formatPreview(records), code: 0 };
-  }
-
-  if (!flags.yes) {
-    const host = safeTarget(config.usageEndpoint);
-    const ok = confirm ? await confirm({ count: sendable.length, host }) : false;
-    if (!ok) return { text: 'Cancelled — nothing was sent.', code: 0 };
   }
 
   const result = await sendRecords(records, { env, readFile, fs, post, now, force: flags.force });

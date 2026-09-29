@@ -73,23 +73,25 @@ test('--list shows one line per turn with its key, and --turn narrows to exactly
   assert.match(narrowed.text, /turns: 1/);
 });
 
-test('--send without --yes and no confirm callback defaults to cancelling', async () => {
+test('--send alone (no --yes) sends immediately — no confirmation needed', async () => {
   const PROJECTS = `${HOME}/projects`;
   const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'hi' } };
   const assistant = { type: 'assistant', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', requestId: 'r1', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
   const jsonl = [entry, assistant].map((e) => JSON.stringify(e)).join('\n');
   const files = { ...noticeShown, [CONFIG]: JSON.stringify({ usageEndpoint: ENDPOINT }), [`${PROJECTS}/repo/s1.jsonl`]: jsonl };
   const listFs = fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] });
+  const sent = [];
   const { text, code } = await runBackfillCli(['--send'], {
     env: baseEnv(),
     readFile: fakeReader(files),
     fs: fakeFs(files),
     exists: () => false,
     listFs,
-    post: async () => assert.fail('must not send'),
+    post: async ({ payload }) => { sent.push(payload); return { ok: true, status: 200 }; },
   });
   assert.equal(code, 0);
-  assert.match(text, /Cancelled/);
+  assert.match(text, /Sent: 1/);
+  assert.equal(sent.length, 1);
 });
 
 test('without --send it only previews and makes no dispatch call', async () => {
@@ -126,30 +128,12 @@ test('--send refuses before the first-run notice has ever been shown', async () 
   assert.match(text, /first-run notice has not been shown/);
 });
 
-test('--send without --yes asks for confirmation and honours "no"', async () => {
-  const PROJECTS = `${HOME}/projects`;
-  const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'hi' } };
-  const assistant = { type: 'assistant', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', requestId: 'r1', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
-  const jsonl = [entry, assistant].map((e) => JSON.stringify(e)).join('\n');
-  const files = { ...noticeShown, [CONFIG]: JSON.stringify({ usageEndpoint: ENDPOINT }), [`${PROJECTS}/repo/s1.jsonl`]: jsonl };
-  const fs = fakeFs(files);
-  const listFs = fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] });
-  let asked = false;
-  const { text, code } = await runBackfillCli(['--send'], {
-    env: baseEnv(),
-    readFile: fakeReader(files),
-    fs,
-    exists: () => false,
-    listFs,
-    post: async () => assert.fail('must not send'),
-    confirm: async ({ count, host }) => { asked = true; assert.equal(count, 1); assert.equal(host, 'api.example.com'); return false; },
-  });
-  assert.equal(asked, true);
+test('--yes is accepted but has no effect on its own', async () => {
+  const { code } = await runBackfillCli(['--yes'], { env: baseEnv(), readFile: fakeReader({}), fs: fakeFs() });
   assert.equal(code, 0);
-  assert.match(text, /Cancelled/);
 });
 
-test('--send --yes with nothing left to send reports that and previews the skips', async () => {
+test('--send with nothing left to send reports that and previews the skips', async () => {
   const PROJECTS = `${HOME}/projects`;
   const key = 's1:p1';
   const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'hi' } };
