@@ -6,6 +6,39 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-09-29
+
+🔍 **Data captured:** a record sent by the new `/usage-backfill` command
+carries `turn_id` (`session_id:promptId`), so a receiver can dedup a resend.
+Live-hook records are unaffected — `turn_id` is only ever set by backfill.
+
+### Added
+- `/usage-backfill` (and `bin/backfill.mjs` for direct CLI use): rebuilds
+  usage records from Claude Code's own local transcripts
+  (`~/.claude/projects/**/*.jsonl`) for turns that happened while the plugin
+  was disabled, the endpoint was down, or before an endpoint existed.
+  Preview is the default and makes no network calls; `--send` pushes
+  selected records through the existing retry-queue/log delivery path.
+  Filters: `--since`, `--until`, `--project`, `--session`,
+  `--include-disabled`. `--force` resends turns already backfilled. See
+  [docs/backfill.md](docs/backfill.md).
+- `claude-usage-backfill-state.json` (mode `0600`): records which turns
+  `/usage-backfill` has already sent, so a re-run never resends them without
+  `--force`.
+- Documentation overhaul: a restructured README plus
+  `docs/configuration.md`, `docs/payload.md`, `docs/backfill.md`, and
+  `docs/troubleshooting.md`, so someone new to the plugin can install,
+  understand, configure, and recover from problems without reading the
+  source.
+
+### Known limitations
+- Backfilled subagent usage is aggregated per session, not per subagent
+  call — there's no reliable per-invocation boundary in a transcript for
+  sidechain traffic (the live `SubagentStop` hook works around the same gap
+  with a running watermark instead).
+- Backfill can't recover turns older than Claude Code's own transcript
+  retention window (`cleanupPeriodDays`, default 30 days).
+
 ## [0.3.1] — 2026-08-31
 
 🔍 **Data captured:** every report and payload now includes `provider` —
