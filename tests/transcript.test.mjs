@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  allSubagentUsage,
+  allTurns,
   extractSubagentUsage,
   extractTurn,
   parseLines,
@@ -201,6 +203,58 @@ test('extractSubagentUsage copes without a sessionId, cwd or kickoff prompt', ()
   assert.equal(usage.prompt, '');
   assert.equal(usage.sessionId, '');
   assert.equal(usage.cwd, '');
+});
+
+test('allTurns returns every completed turn, each with its own timestamp', () => {
+  const entries = [
+    { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'first' } },
+    { type: 'assistant', promptId: 'p1', requestId: 'r1', message: { model: 'claude-sonnet-5', usage: USAGE_A } },
+    { type: 'user', promptSource: 'typed', promptId: 'p2', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-02T00:00:00Z', message: { content: 'second' } },
+    { type: 'assistant', promptId: 'p2', requestId: 'r2', message: { model: 'claude-opus-5', usage: { output_tokens: 3 } } },
+  ];
+  const turns = allTurns(entries);
+  assert.equal(turns.length, 2);
+  assert.equal(turns[0].prompt, 'first');
+  assert.equal(turns[0].timestamp, '2026-09-01T00:00:00Z');
+  assert.equal(turns[0].promptId, 'p1');
+  assert.equal(turns[1].prompt, 'second');
+  assert.equal(turns[1].model, 'claude-opus-5');
+});
+
+test('allTurns returns nothing for a transcript with no prompts', () => {
+  assert.deepEqual(allTurns([]), []);
+});
+
+test('allTurns copes without a sessionId, cwd, promptId or timestamp', () => {
+  const entries = [
+    { type: 'user', promptSource: 'typed', message: { content: 'hi' } },
+    { type: 'assistant', requestId: 'r1', message: { usage: USAGE_A } },
+  ];
+  const [turn] = allTurns(entries);
+  assert.equal(turn.sessionId, '');
+  assert.equal(turn.cwd, '');
+  assert.equal(turn.promptId, '');
+  assert.equal(turn.timestamp, '');
+  assert.equal(turn.model, '');
+});
+
+test('allSubagentUsage returns null with no sidechain entries, else aggregates the whole session', () => {
+  assert.equal(allSubagentUsage([]), null);
+  const entries = [
+    { type: 'user', isSidechain: true, sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'do the subtask' } },
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:01:00Z', message: { model: 'claude-haiku-4-5', usage: { output_tokens: 4 } } },
+    { type: 'assistant', isSidechain: true, requestId: 'sub2', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:02:00Z', message: { model: 'claude-opus-5', usage: { output_tokens: 2 } } },
+  ];
+  const usage = allSubagentUsage(entries);
+  assert.equal(usage.prompt, 'do the subtask');
+  assert.equal(usage.sessionId, 's1');
+  assert.equal(usage.timestamp, '2026-09-01T00:02:00Z');
+  assert.equal(usage.models.length, 2);
+});
+
+test('allSubagentUsage copes without a kickoff prompt', () => {
+  const usage = allSubagentUsage([{ type: 'assistant', isSidechain: true, requestId: 'sub1', message: { usage: { output_tokens: 4 } } }]);
+  assert.equal(usage.prompt, '');
 });
 
 test('a real-shaped transcript round-trips through the reader', () => {
