@@ -49,10 +49,28 @@ test('rejects an unknown flag', async () => {
 
 test('parses every filter and toggle flag without error', async () => {
   const { code } = await runBackfillCli(
-    ['--project', 'a', '--session', 's1', '--include-disabled', '--force', '--until', '2026-09-01'],
+    ['--project', 'a', '--session', 's1', '--turn', 's1:p1', '--include-disabled', '--force', '--until', '2026-09-01'],
     { env: baseEnv(), readFile: fakeReader({}), fs: fakeFs() },
   );
   assert.equal(code, 0);
+});
+
+test('--list shows one line per turn with its key, and --turn narrows to exactly one', async () => {
+  const PROJECTS = `${HOME}/projects`;
+  const entryP1 = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'first' } };
+  const assistantP1 = { type: 'assistant', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', requestId: 'r1', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
+  const entryP2 = { type: 'user', promptSource: 'typed', promptId: 'p2', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-02T00:00:00Z', message: { content: 'second' } };
+  const assistantP2 = { type: 'assistant', promptId: 'p2', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-02T00:00:00Z', requestId: 'r2', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
+  const jsonl = [entryP1, assistantP1, entryP2, assistantP2].map((e) => JSON.stringify(e)).join('\n');
+  const files = { [`${PROJECTS}/repo/s1.jsonl`]: jsonl };
+  const listFs = fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] });
+
+  const list = await runBackfillCli(['--list'], { env: baseEnv(), readFile: fakeReader(files), fs: fakeFs(files), exists: () => false, listFs });
+  assert.match(list.text, /s1:p1/);
+  assert.match(list.text, /s1:p2/);
+
+  const narrowed = await runBackfillCli(['--turn', 's1:p2'], { env: baseEnv(), readFile: fakeReader(files), fs: fakeFs(files), exists: () => false, listFs });
+  assert.match(narrowed.text, /turns: 1/);
 });
 
 test('--send without --yes and no confirm callback defaults to cancelling', async () => {

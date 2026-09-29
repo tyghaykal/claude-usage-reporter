@@ -64,10 +64,42 @@ the main [README](../README.md#how-it-works).
 | `--until DATE` | no | Only turns at or before this date/time |
 | `--project NAME` | yes | Only these projects (the real repo/directory name) |
 | `--session ID` | yes | Only these session ids |
+| `--turn KEY` | yes | Only these exact turns — see *Picking individual turns* below |
 | `--include-disabled` | no | Also include projects with `usageEnabled: false` |
+| `--list` | no | Preview as one line per turn, with its key, instead of the grouped summary |
 | `--send` | no | Actually push (default is preview only) |
 | `--yes` | no | Skip the confirmation prompt (only meaningful with `--send`) |
 | `--force` | no | Resend turns already recorded as backfilled |
+
+## Picking individual turns
+
+The grouped preview (the default) and `--project`/`--session`/`--since`/
+`--until` narrow things down to a project, a session, or a date range — not
+to a specific turn. To pick exact turns, first list them:
+
+```
+/claude-usage-reporter:usage-backfill --since 2026-09-01 --list
+```
+
+```
+s1:9e4e0b5d-66ae-4ff8-8f2c-3099ad91d006  2026-09-01T10:15:00.000Z  my-repo  claude-sonnet-5  2,684 tokens
+s1:a5bd3ed9-3319-4496-b525-424331ff169d  2026-09-01T11:02:00.000Z  my-repo  claude-sonnet-5  980 tokens  (already reported)
+s1:subagent                              2026-09-01T11:05:00.000Z  my-repo  claude-haiku-4-5  310 tokens
+```
+
+Each line's leading token is the turn's key (`sessionId:promptId`, or
+`sessionId:subagent` for that session's aggregated subagent usage). Then
+send only the ones you want, `--turn` repeated for each:
+
+```
+/claude-usage-reporter:usage-backfill \
+  --turn s1:9e4e0b5d-66ae-4ff8-8f2c-3099ad91d006 \
+  --turn s1:subagent \
+  --send
+```
+
+`--turn` combines with every other filter (`--project`, `--session`,
+`--since`/`--until`) — a turn must match all of them to be selected.
 
 `--since`/`--until` accept an ISO date or datetime. A bare date
 (`2026-09-01`, no time part) is treated as local time; `--until` with a bare

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   backfillStatePath,
   collectRecords,
+  formatList,
   formatPreview,
   listTranscriptFiles,
   markReported,
@@ -184,6 +185,38 @@ test('collectRecords derives project from the working directory when no entry ca
   };
   const [record] = collectRecords({}, deps).filter((r) => !r.skip);
   assert.equal(record.project, 'unknown');
+});
+
+test('collectRecords filters to exact turns by --turn key, main turns and subagent alike', () => {
+  const file = `${PROJECTS}/repo/s1.jsonl`;
+  const entries = [
+    ...turnEntries({ sessionId: 's1', cwd: '/repo', promptId: 'p1', timestamp: '2026-09-01T00:00:00Z', usages: [USAGE_A] }),
+    ...turnEntries({ sessionId: 's1', cwd: '/repo', promptId: 'p2', timestamp: '2026-09-01T00:00:00Z', usages: [USAGE_A] }),
+    { type: 'user', isSidechain: true, sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'subtask' } },
+    { type: 'assistant', isSidechain: true, requestId: 'sub1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:01:00Z', message: { model: 'claude-haiku-4-5', usage: USAGE_A } },
+  ];
+  const readFile = fakeReader({ [file]: entries.map((e) => JSON.stringify(e)).join('\n') });
+  const deps = {
+    env: baseEnv(),
+    readFile,
+    exists: () => false,
+    listFs: fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] }),
+  };
+  const onlyP2 = collectRecords({ turns: [turnKey('s1', 'p2')] }, deps).filter((r) => !r.skip);
+  assert.deepEqual(onlyP2.map((r) => r.promptId), ['p2']);
+
+  const onlySubagent = collectRecords({ turns: [turnKey('s1', 'subagent')] }, deps).filter((r) => !r.skip);
+  assert.deepEqual(onlySubagent.map((r) => r.promptId), ['subagent']);
+});
+
+test('formatList prints one line per sendable turn with its key, and "No matching turns" otherwise', () => {
+  assert.equal(formatList([{ skip: 'zero-tokens', project: 'repo' }]), 'No matching turns found.');
+  const text = formatList([
+    { key: 's1:p1', datetime: '2026-09-01T00:00:00Z', project: 'repo', model: 'claude-sonnet-5', tokens: { total: 10 }, alreadyReported: false },
+    { key: 's1:p2', datetime: '2026-09-01T00:00:00Z', project: 'repo', model: '', tokens: { total: 5 }, alreadyReported: true },
+  ]);
+  assert.match(text, /s1:p1.*claude-sonnet-5.*10 tokens/);
+  assert.match(text, /s1:p2.*unknown-model.*5 tokens.*\(already reported\)/);
 });
 
 test('collectRecords skips a disabled project unless --include-disabled', () => {

@@ -100,6 +100,7 @@ export function collectRecords(options = {}, deps = {}) {
   const untilMs = options.until ? parseBound(options.until, true) : null;
   const projects = options.projects && options.projects.length ? options.projects : null;
   const sessions = options.sessions && options.sessions.length ? options.sessions : null;
+  const turns = options.turns && options.turns.length ? new Set(options.turns) : null;
   const provider = resolveProvider(env);
 
   const records = [];
@@ -145,6 +146,7 @@ export function collectRecords(options = {}, deps = {}) {
 
     for (const turn of allTurns(entries)) {
       if (sessions && !sessions.includes(turn.sessionId)) continue;
+      if (turns && !turns.has(turnKey(turn.sessionId, turn.promptId))) continue;
       if (!turn.timestamp) {
         records.push({ skip: 'no-timestamp', project });
         continue;
@@ -154,7 +156,7 @@ export function collectRecords(options = {}, deps = {}) {
     }
 
     const sub = allSubagentUsage(entries);
-    if (sub && (!sessions || sessions.includes(sub.sessionId))) {
+    if (sub && (!sessions || sessions.includes(sub.sessionId)) && (!turns || turns.has(turnKey(sub.sessionId, 'subagent')))) {
       if (!sub.timestamp) {
         records.push({ skip: 'no-timestamp', project });
       } else if (inRange(sub.timestamp)) {
@@ -208,6 +210,19 @@ export function formatPreview(records) {
   if (skipped['no-timestamp']) lines.push('', `Skipped (no timestamp): ${skipped['no-timestamp']}`);
   if (skipped['zero-tokens']) lines.push(`Skipped (zero tokens): ${skipped['zero-tokens']}`);
   return lines.join('\n');
+}
+
+/**
+ * One line per sendable record — its key (for `--turn`), date, project,
+ * session, model, tokens, and whether it's already been backfilled. Lets you
+ * find the exact key(s) to pass to `--turn` before committing to a send.
+ */
+export function formatList(records) {
+  const sendable = records.filter((r) => !r.skip);
+  if (!sendable.length) return 'No matching turns found.';
+  return sendable
+    .map((r) => `${r.key}  ${r.datetime}  ${r.project}  ${r.model || 'unknown-model'}  ${r.tokens.total.toLocaleString('en-US')} tokens${r.alreadyReported ? '  (already reported)' : ''}`)
+    .join('\n');
 }
 
 /**

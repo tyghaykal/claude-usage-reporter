@@ -6,16 +6,18 @@
 
 import { readFileSync } from 'node:fs';
 import { COMMAND, loadConfig, statePath } from './config.mjs';
-import { collectRecords, formatPreview, markReported, sendRecords } from './backfill.mjs';
+import { collectRecords, formatList, formatPreview, markReported, sendRecords } from './backfill.mjs';
 import { postUsage, safeTarget } from './sender.mjs';
 import { fsDefaults, readJson } from './store.mjs';
 
 const USAGE = [
   'Usage:',
   '  /usage-backfill [--since DATE] [--until DATE] [--project NAME]... [--session ID]...',
-  '                  [--include-disabled] [--send] [--yes] [--force]',
+  '                  [--turn KEY]... [--include-disabled] [--list] [--send] [--yes] [--force]',
   '',
   '  Without --send: preview only, grouped by project then session. No network calls.',
+  '  --list             preview as one line per turn, with its key — use this to find --turn values',
+  '  --turn KEY         repeatable; only these exact turns, by the key --list prints ("sessionId:promptId")',
   '  --send             push the selected records',
   '  --yes              skip the confirmation prompt (only with --send)',
   '  --force            resend turns already recorded as backfilled',
@@ -26,15 +28,17 @@ const USAGE = [
 ].join('\n');
 
 function parseArgs(argv) {
-  const options = { projects: [], sessions: [] };
-  const flags = { send: false, yes: false, force: false };
+  const options = { projects: [], sessions: [], turns: [] };
+  const flags = { send: false, yes: false, force: false, list: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--since') options.since = argv[++i];
     else if (arg === '--until') options.until = argv[++i];
     else if (arg === '--project') options.projects.push(argv[++i]);
     else if (arg === '--session') options.sessions.push(argv[++i]);
+    else if (arg === '--turn') options.turns.push(argv[++i]);
     else if (arg === '--include-disabled') options.includeDisabled = true;
+    else if (arg === '--list') flags.list = true;
     else if (arg === '--send') flags.send = true;
     else if (arg === '--yes') flags.yes = true;
     else if (arg === '--force') flags.force = true;
@@ -71,7 +75,7 @@ export async function runBackfillCli(argv, {
   records = markReported(records, env, fs);
 
   if (!flags.send) {
-    return { text: formatPreview(records), code: 0 };
+    return { text: flags.list ? formatList(records) : formatPreview(records), code: 0 };
   }
 
   const { config } = loadConfig({ env, readFile });

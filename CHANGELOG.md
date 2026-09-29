@@ -19,9 +19,12 @@ Live-hook records are unaffected — `turn_id` is only ever set by backfill.
   was disabled, the endpoint was down, or before an endpoint existed.
   Preview is the default and makes no network calls; `--send` pushes
   selected records through the existing retry-queue/log delivery path.
-  Filters: `--since`, `--until`, `--project`, `--session`,
-  `--include-disabled`. `--force` resends turns already backfilled. See
-  [docs/backfill.md](docs/backfill.md).
+  Filters: `--since`, `--until`, `--project`, `--session`, `--turn` (exact
+  turn selection — see `--list`), `--include-disabled`. `--force` resends
+  turns already backfilled. See [docs/backfill.md](docs/backfill.md).
+- `--list`: previews as one line per turn instead of the grouped summary,
+  showing each turn's key so you can pass it to `--turn` and select exactly
+  which records to send.
 - `claude-usage-backfill-state.json` (mode `0600`): records which turns
   `/usage-backfill` has already sent, so a re-run never resends them without
   `--force`.
