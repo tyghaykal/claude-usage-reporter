@@ -2,6 +2,10 @@
 /**
  * Minimal reference receiver — the "endpoint" side made concrete.
  *
+ * A record from /usage-backfill carries turn_id ("<sessionId>:<promptId>"),
+ * a stable id you can use to dedup a resend on your own side — see
+ * docs/backfill.md.
+ *
  * NOT part of the plugin and not required to use it. It exists so you can see
  * exactly what arrives before pointing the plugin at real infrastructure.
  *
@@ -41,8 +45,9 @@ createServer((req, res) => {
       const record = JSON.parse(body);
       appendFileSync(OUT, `${JSON.stringify(record)}\n`);
       const mark = record.error ? `  ERROR ${record.error_type || 'unknown'}` : '';
+      const id = record.turn_id ? `  [${record.turn_id}]` : '';
       console.log(
-        `${record.datetime}  ${record.project}  ${record.tokens.total} tokens${mark}  ${JSON.stringify(record.prompt).slice(0, 60)}`,
+        `${record.datetime}  ${record.project}  ${record.tokens.total} tokens${mark}${id}  ${JSON.stringify(record.prompt).slice(0, 60)}`,
       );
       res.writeHead(202).end('ok\n');
     } catch {

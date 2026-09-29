@@ -1,13 +1,101 @@
 # Claude Usage Reporter
 
-A Claude Code plugin that shows you what every prompt actually cost — and, if you
-want, forwards that to an HTTP endpoint you run yourself.
+A Claude Code plugin that shows you what every prompt actually cost. It can also
+forward that to an HTTP endpoint you run yourself. **Nothing leaves your
+machine unless you configure an endpoint.**
 
 ---
 
-## What it captures, and where it goes
+## Quick start
 
-**Read this before installing.**
+**1. Install:**
+
+```
+/plugin marketplace add tyghaykal/claude-usage-reporter
+/plugin install claude-usage-reporter@claude-usage-reporter
+```
+
+**2. Verify it loaded** — a plugin that fails to load still shows as installed:
+
+```
+$ claude plugin list
+claude-usage-reporter   Status: ✔ enabled
+```
+
+**3. See your first report** — it prints after your next prompt, once Claude
+Code finishes replying:
+
+```
+[my-project] 2026-08-28 10:15:00 UTC · claude-sonnet-5 · claude-session
+Tokens — input: 1,234 | cache read: 800 | cache write: 200 | output: 450 | total: 2,684
+Est. cost (list price, estimate only): $0.0142
+Session running total: 14,320 tokens across 6 prompts
+
+No usage endpoint configured — set one to auto-report instead:
+  /claude-usage-reporter:usage-config set usageEndpoint <url>
+```
+
+**4. (Optional) Point it at an endpoint** — nothing is sent until you do this:
+
+```
+/claude-usage-reporter:usage-config set usageEndpoint https://myteam.example.com/claude-usage
+```
+
+From here: [Configuration](docs/configuration.md) for every setting,
+[Backfill](docs/backfill.md) if you want history from before this point, and
+[Troubleshooting](docs/troubleshooting.md) if something looks wrong.
+
+---
+
+## How it works
+
+```
+ you type a prompt
+        │
+        ▼
+ Claude Code writes/updates the session transcript (~/.claude/projects/**/*.jsonl)
+        │
+        ▼
+ a hook fires (Stop, StopFailure, SubagentStop, SessionEnd, UserPromptSubmit)
+        │
+        ▼
+ the hook reads token usage out of the transcript, builds a payload
+        │
+        ├─────────────► printed to your terminal (if usageDisplay allows it)
+        │
+        ▼
+ usageEndpoint configured? ── no ──► nothing else happens
+        │
+       yes
+        │
+        ▼
+ handed to a detached background process, which POSTs it
+        │
+        ├── succeeds ──► done
+        │
+        └── fails ──► queued in claude-usage-queue.jsonl, retried next session
+```
+
+Six hooks, dependency-free JavaScript, read only what Claude Code already
+writes to disk:
+
+| Hook | What it does |
+|---|---|
+| `SessionStart` | Shows the first-run notice once; flushes any queued failed pushes. |
+| `UserPromptSubmit` | Catches a turn you cancelled (Esc has no hook of its own): if the transcript shows a completed turn before the one you just typed that never got a `Stop`, it's posted here, marked `interrupted`. Silent otherwise. |
+| `Stop` | Reads the turn's usage out of the transcript, then prints or pushes it. A turn that used more than one model is split into one payload per model. |
+| `StopFailure` | Same capture when the turn ends in an API error, with `error: true` on the payload. Still sent if the turn used zero tokens. |
+| `SubagentStop` | Captures token usage from subagents (Task-tool calls), per model, as each one finishes. |
+| `SessionEnd` | Last chance: if the session dies with leftover unreported usage, it's posted and marked `interrupted`. A clean session end sends nothing. |
+
+Because it reads only what Claude Code already stores locally, behaviour is
+identical on a Pro subscription, a Max/Team/Enterprise plan, and a direct API
+key. It never reads your Anthropic credentials, never touches request
+routing, and never branches on your account type.
+
+---
+
+## What is captured and where it goes
 
 After every prompt, the plugin records:
 
@@ -15,49 +103,181 @@ After every prompt, the plugin records:
 |---|---|
 | `project` | `my-repo` — your git repository name, or the working directory name |
 | `datetime` | `2026-08-28T10:15:00.000Z` |
-| `prompt` | **the full text of the prompt you typed** |
+| `prompt` | **the full text of the prompt you typed** — shaped by `usagePromptMode` |
 | `session_id` | `abc-123` |
 | `model` | `claude-sonnet-5` |
-| `provider` | `claude-session`, or the host of `ANTHROPIC_BASE_URL` if you've set one (e.g. `https://api.amanai.dev`) |
+| `provider` | `claude-session`, or the host of `ANTHROPIC_BASE_URL` if you've set one |
 | `tokens` | `input`, `cache_read`, `cache_write`, `output`, `total` |
-| `error` | present only on a failed or interrupted turn — see below |
+| `error` | present only on a failed or interrupted turn |
 
-**Nothing leaves your machine by default.** With no endpoint configured, the plugin
-makes no network calls at all — it just prints the report to your terminal. Data is
-transmitted only after *you* set `usageEndpoint`, and then it goes only to that URL.
+Full field-by-field schema, including the backfill-only `turn_id`:
+[docs/payload.md](docs/payload.md).
 
-That endpoint is entirely your responsibility. The plugin's authors have no
-visibility into it and no control over what it does with your prompt text. If your
-prompts contain anything sensitive, set `usagePromptMode` to `truncate:N` or `none`
-before setting an endpoint.
+**Nothing leaves your machine by default.** With no endpoint configured, the
+plugin makes no network calls at all — it just prints the report to your
+terminal. Data is transmitted only after *you* set `usageEndpoint`, and then
+it goes only to that URL. That endpoint is entirely your responsibility —
+the plugin's authors have no visibility into it. If your prompts contain
+anything sensitive, set `usagePromptMode` to `truncate:N` or `none` before
+setting an endpoint (see [prompt-privacy guidance](docs/configuration.md#prompt-privacy-guidance-usagepromptmode)).
 
-Everything the plugin does is plain, unminified JavaScript in this repository —
-`src/` and `hooks/` are short enough to read end to end before you trust it.
+### Local files
+
+All under `~/.claude/`, all mode `0600` (owner read/write only):
+
+| File | Purpose | Contains prompt text? |
+|---|---|---|
+| `claude-usage.json` | Your settings | No |
+| `claude-usage-state.json` | First-run flag, live-hook de-duplication watermark | No |
+| `claude-usage-backfill-state.json` | Which turns `/usage-backfill` has already sent | No — only session/prompt ids |
+| `claude-usage-queue.jsonl` | Pushes that failed, waiting to retry (capped at 500) | Yes — holds full unsent payloads |
+| `claude-usage.log` | Delivery failures only | No — payload contents are never logged |
 
 ---
 
 ## Privacy & Data
 
-**The plugin's authors collect nothing.** There is no telemetry, no analytics, no
-hardcoded server, and no third party in this project at all — the only network
-call in the entire codebase is the POST in `src/sender.mjs`, and it only ever
-fires against the `usageEndpoint` URL *you* set. Leave it unset and the plugin
-never makes a network request, period. Verify it yourself: `grep -rn fetch src/`
-turns up exactly one call site.
+**The plugin's authors collect nothing.** There is no telemetry, no
+analytics, no hardcoded server, and no third party in this project at all —
+the only network call in the entire codebase is the POST in
+`src/sender.mjs`, and it only ever fires against the `usageEndpoint` URL
+*you* set. Leave it unset and the plugin never makes a network request,
+period. Verify it yourself:
 
-Nothing is processed outside that scope, either — there's no relay, no
-forwarding, no bundled backend the data passes through on its way anywhere. Your
-prompt text and token counts go straight from your machine to the endpoint you
-configured, over HTTPS/HTTP you control, with nothing in between.
+```
+grep -rn fetch src/
+```
 
-Everything else stays local, under `~/.claude/`, mode `0600`:
-`claude-usage.json` (settings), `claude-usage-state.json` (first-run flag),
-`claude-usage-queue.jsonl` (pushes that failed, so they can retry), and
-`claude-usage.log` (delivery failures only — payload contents are never logged).
+turns up exactly one call site. Nothing is processed outside that scope
+either — there's no relay, no forwarding, no bundled backend the data passes
+through on its way anywhere. Your prompt text and token counts go straight
+from your machine to the endpoint you configured, over HTTPS/HTTP you
+control, with nothing in between.
 
-The plugin also never reads your Anthropic account credentials or API key — it
-only reads the local transcript Claude Code already writes to compute token
-counts (see *How it works* below).
+Everything the plugin does is plain, unminified JavaScript in this
+repository — `src/` and `hooks/` are short enough to read end to end before
+you trust it.
+
+---
+
+## Configuration
+
+Every setting, per-project overrides, and worked examples:
+**[docs/configuration.md](docs/configuration.md)**
+
+Quick reference:
+
+```
+/claude-usage-reporter:usage-config                                  show everything (secrets masked)
+/claude-usage-reporter:usage-config set usageEndpoint https://...    set a value
+/claude-usage-reporter:usage-config unset usageEndpoint              remove one
+/claude-usage-reporter:usage-config test-connection                  check the endpoint accepts a record
+```
+
+`test-connection` POSTs one real-shaped record with zero tokens, using
+whatever auth you have configured, and reports what came back — including
+the response body, which is usually what tells you which header the
+endpoint wants:
+
+```
+Endpoint: http://localhost:8080/api/usage
+Auth:     None — sending no auth header
+
+FAILED — HTTP 401.
+Response: {"error":"Missing X-API-Key header"}
+```
+
+It's the only command that talks to the network on demand. A success leaves
+a zero-token record on your backend.
+
+### Try it locally first
+
+```
+node examples/receiver.mjs
+/claude-usage-reporter:usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
+```
+
+A ~40-line reference receiver that prints what arrives and appends it to
+`examples/usage.jsonl`. It's not part of the plugin — it exists so you can
+see the exact payload before pointing this at real infrastructure.
+
+---
+
+## Backfill
+
+If the plugin was disabled for a while, the endpoint was down, or you just
+added an endpoint and want history alongside it, `/usage-backfill` rebuilds
+usage records from Claude Code's own local transcripts and pushes the ones
+you choose. Preview is the default — it makes no network calls until you add
+`--send`.
+
+```
+/claude-usage-reporter:usage-backfill --since 2026-09-01
+/claude-usage-reporter:usage-backfill --since 2026-09-01 --send
+```
+
+Full walkthrough, every flag, and how duplicates are avoided:
+**[docs/backfill.md](docs/backfill.md)**
+
+---
+
+## Receiving the data
+
+Payload schema, field by field, with examples for a normal turn, a failed
+turn, and a backfilled turn: **[docs/payload.md](docs/payload.md)**
+
+Minimal receiver walkthrough and dedup advice: see
+[docs/payload.md#receiving-it](docs/payload.md#receiving-it) and
+`examples/receiver.mjs`.
+
+The POST happens in a detached background process, so a slow or dead
+endpoint can never delay your next prompt. Failed pushes are queued locally
+and retried at the start of your next session.
+
+---
+
+## Known limitations
+
+- **Esc / interrupt has no hook of its own.** Claude Code fires `StopFailure`
+  for API errors, but not when you cancel a turn. `UserPromptSubmit` catches
+  it as soon as you type the next prompt in the same session, and
+  `SessionEnd` catches it if you don't. Cancelling two turns in a row without
+  ever completing one in between still drops the first — only the turn
+  immediately before the newest prompt is checked.
+- **Failed pushes are dropped after 500 queued records**, oldest first.
+- **Costs are estimates** against public list price, never a charge and never
+  authoritative billing. Pricing lives in `src/pricing.json` and needs
+  updating when Anthropic changes rates or ships a model the table doesn't
+  know — an unknown model simply omits the cost line; token counts are still
+  exact.
+- **Subagent usage in backfill is aggregated per session, not per call.**
+  There's no reliable per-invocation boundary in a transcript for subagent
+  (sidechain) traffic, so `/usage-backfill` folds all of one session's
+  subagent usage into a single record — the live `SubagentStop` hook, by
+  contrast, reports each subagent call separately as it happens.
+- **Backfill can't recover what Claude Code has already deleted.** Turns
+  older than the transcript retention window (`cleanupPeriodDays`, default
+  30 days) are gone from disk before backfill can see them.
+
+---
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| **Turn** | One prompt you typed and the reply that followed — the unit this plugin reports on. |
+| **Session** | One continuous Claude Code conversation, identified by `session_id`; may contain many turns. |
+| **Sidechain / subagent** | Work done by a Task-tool subagent inside a turn, captured separately by `SubagentStop`. |
+| **Provider** | Which Anthropic endpoint served the turn: `claude-session` (Claude Code's own auth) or the host of a custom `ANTHROPIC_BASE_URL`. |
+| **Queue** | `claude-usage-queue.jsonl` — pushes that failed, held locally for retry, capped at 500 records. |
+| **Backfill** | Rebuilding and sending historical usage records from local transcripts via `/usage-backfill`, for turns the live hooks never reported. |
+
+---
+
+## Troubleshooting
+
+Common issues, the retry-queue caveat, backfill quirks, uninstalling, and how
+to verify the network behavior yourself: **[docs/troubleshooting.md](docs/troubleshooting.md)**
 
 ---
 
@@ -78,16 +298,9 @@ Or from a local checkout:
 Requires Node 18+ (already present if you installed Claude Code via npm). No
 dependencies, no build step, no `settings.json` editing.
 
-Confirm it loaded — this is worth doing, since a plugin that fails to load still
-reports as installed:
-
-```
-claude plugin list     # look for: Status: ✔ enabled
-```
-
-On the first session after install you get a one-time notice describing exactly
-what is captured. Nothing is sent anywhere on that first turn, even if an endpoint
-is already configured.
+On the first session after install you get a one-time notice describing
+exactly what is captured. Nothing is sent anywhere on that first turn, even
+if an endpoint is already configured.
 
 ### Updating
 
@@ -96,316 +309,9 @@ is already configured.
 /plugin install claude-usage-reporter@claude-usage-reporter
 ```
 
-Versions are tagged in this repository, and [CHANGELOG.md](CHANGELOG.md) marks any
-change to what is captured or where it is sent with 🔍 so you can read it before
-upgrading.
-
----
-
-## Out of the box
-
-With no configuration, every prompt ends with:
-
-```
-[my-project] 2026-08-28 10:15:00 UTC · claude-sonnet-5 · claude-session
-Tokens — input: 1,234 | cache read: 800 | cache write: 200 | output: 450 | total: 2,684
-Est. cost (list price, estimate only): $0.0142
-Session running total: 14,320 tokens across 6 prompts
-
-No usage endpoint configured — set one to auto-report instead:
-  /claude-usage-reporter:usage-config set usageEndpoint <url>
-```
-
-Costs are **estimates against public API list price**, not charges. On a Pro / Max /
-Team / Enterprise plan you are billed a flat rate and this figure is purely for
-visibility. On a metered API key it should track your bill closely, but the plugin
-is not the system of record — see Anthropic's own usage and cost reporting for that.
-
----
-
-## Sending usage somewhere
-
-```
-/claude-usage-reporter:usage-config set usageEndpoint https://myteam.example.com/claude-usage
-```
-
-Once set, terminal output turns off and each prompt POSTs this JSON instead:
-
-```jsonc
-{
-  // Always the git repository name (or directory name outside a repo).
-  "project": "my-project",
-  // Your friendlier name if you set one for this project, otherwise the same
-  // value as "project" — always present.
-  "project_label": "Client Alpha",
-  "datetime": "2026-08-28T10:15:00Z",
-  "prompt": "fix the login bug",
-  "session_id": "abc-123",
-  "model": "claude-sonnet-5",
-  // "claude-session" for Claude Code's own session auth, or the scheme+host of
-  // ANTHROPIC_BASE_URL if you've pointed Claude Code at your own API gateway.
-  "provider": "claude-session",
-  "tokens": {
-    "input": 1234,
-    "cache_read": 800,
-    "cache_write": 200,
-    "output": 450,
-    "total": 2684
-  }
-}
-```
-
-A successful turn omits the error fields entirely, so existing backends keep seeing
-the original shape. If the turn ended in an API error, or leftover usage is flushed
-because the session died mid-turn, the same payload is sent with a mark:
-
-```json
-{
-  "error": true,
-  "error_type": "rate_limit",
-  "error_details": "retry in 2s"
-}
-```
-
-`error_type` is a short slug (`rate_limit`, `authentication_failed`, `interrupted`,
-…). `error_details` is optional and truncated to 300 characters. An API error that
-never produced usage is still posted, with zeros in `tokens`.
-
-The POST happens in a detached background process, so a slow or dead endpoint can
-never delay your next prompt. Failed pushes are queued locally and retried at the
-start of your next session.
-
-### Check it before you rely on it
-
-Pushes happen in the background, so a misconfigured endpoint is silent — you find
-out by noticing no data ever arrived. `test-connection` makes it explicit:
-
-```
-/claude-usage-reporter:usage-config test-connection
-```
-
-```
-Endpoint: https://myteam.example.com/claude-usage
-Auth:     Header — sending X-API-Key
-
-OK — 204. The endpoint accepted a test record.
-It stored a zero-token entry; remove it if your backend keeps it.
-```
-
-On failure it prints the response body, which is normally what names the problem:
-
-```
-FAILED — HTTP 401.
-Response: {"error":"Missing X-API-Key header"}
-
-The endpoint rejected the credentials. Current usageAuthType is "None".
-```
-
-### Try it locally first
-
-```
-node examples/receiver.mjs
-/claude-usage-reporter:usage-config set usageEndpoint http://127.0.0.1:8787/claude-usage
-```
-
-A ~40-line reference receiver that prints what arrives and appends it to
-`examples/usage.jsonl`. It is not part of the plugin — it exists so you can see the
-exact payload before pointing this at real infrastructure.
-
----
-
-## Configuration
-
-```
-/claude-usage-reporter:usage-config                                  show everything (secrets masked)
-/claude-usage-reporter:usage-config set usageEndpoint https://...    set a value
-/claude-usage-reporter:usage-config unset usageEndpoint              remove one
-/claude-usage-reporter:usage-config test-connection                  check the endpoint accepts a record
-```
-
-`test-connection` POSTs one real-shaped record with zero tokens, using whatever
-auth you have configured, and reports what came back — including the response
-body, which is usually what tells you which header the endpoint wants:
-
-```
-Endpoint: http://localhost:8080/api/usage
-Auth:     None — sending no auth header
-
-FAILED — HTTP 401.
-Response: {"error":"Missing X-API-Key header"}
-```
-
-It is the only command that talks to the network on demand. Note that a success
-leaves a zero-token record on your backend.
-
-Settings live in `~/.claude/claude-usage.json` (mode `0600`). Every setting also has
-an environment variable, for CI or scripted setups; **the config file wins** when
-both are present. Changes take effect on the next prompt — no reinstall.
-
-| Setting | Env | Default | Meaning |
-|---|---|---|---|
-| `usageEndpoint` | `CC_USAGE_ENDPOINT` | — | Where to POST. Unset = nothing is ever sent. |
-| `usageAuthType` | `CC_USAGE_AUTH_TYPE` | `None` | `None`, `Bearer`, `Basic`, `Header`, `Key Pair` |
-| `usageAuthToken` | `CC_USAGE_AUTH_TOKEN` | — | Secret for `Bearer` / `Basic` |
-| `usageHeaderName` | `CC_USAGE_HEADER_NAME` | `X-API-Key` | Header name for `Header` |
-| `usageHeaderValue` | `CC_USAGE_HEADER_VALUE` | — | Secret for `Header` |
-| `usageKeyIdHeaderName` | `CC_USAGE_KEY_ID_HEADER_NAME` | `X-API-Key-Id` | For `Key Pair` |
-| `usageKeyIdValue` | `CC_USAGE_KEY_ID_VALUE` | — | Secret for `Key Pair` |
-| `usageKeySecretHeaderName` | `CC_USAGE_KEY_SECRET_HEADER_NAME` | `X-API-Key-Secret` | For `Key Pair` |
-| `usageKeySecretValue` | `CC_USAGE_KEY_SECRET_VALUE` | — | Secret for `Key Pair` |
-| `usageDisplay` | `CC_USAGE_DISPLAY` | `auto` | `auto`, `always`, `off` — `off` only silences the terminal, it does not stop a push to `usageEndpoint` |
-| `usageEnabled` | `CC_USAGE_ENABLED` | `true` | Master switch — `false` stops the reporter cold: no terminal report, no push, no exceptions |
-| `usageProjectLabel:<project>` | — (file only) | — | Friendlier name for one project, shown in the terminal report and sent as `project_label`; `project` still reports the real repo/directory name. See *Per-project labels* below. |
-| `usageProject:<project>:<key>` | — (file only) | — | Per-project override of any setting above — its own endpoint, its own auth, or `usageEnabled false` to stop tracking that project entirely. See *Per-project settings* below. |
-| `usageUser` | `CC_USAGE_USER` | — | Optional label added to the payload, for shared accounts |
-| `usagePromptMode` | `CC_USAGE_PROMPT_MODE` | `full` | `full`, `truncate:N`, `none` |
-| `usageRetry` | `CC_USAGE_RETRY` | `true` | Queue failed pushes and retry next session |
-| `usageTimeoutMs` | `CC_USAGE_TIMEOUT_MS` | `5000` | Per-request timeout |
-
-### `usageDisplay`
-
-- **`auto`** — terminal report only while no endpoint is set. Setting an endpoint
-  silently switches you to pushing. One mode at a time.
-- **`always`** — report *and* push, on every call.
-- **`off`** — never print. With no endpoint set this leaves you with no visibility
-  at all, so it is meant for scripted use.
-
-### Per-project labels
-
-Labels are set per project, not globally — there is no single name that applies
-everywhere. `<project>` is the real repo/directory name (the same string
-`project` reports):
-
-```
-/claude-usage-reporter:usage-config set usageProjectLabel:client "Client Alpha"
-/claude-usage-reporter:usage-config unset usageProjectLabel:client
-```
-
-A project with no override reports `project_label` as its own real repo/directory
-name — the same value as `project` — so the field is always present, never
-omitted. Overrides are stored under `usageProjectLabels` in the config file and
-listed separately when you run `usage-config` with no arguments.
-
-### Per-project settings
-
-Beyond labels, a project can override any setting from the table above — its
-own endpoint, its own auth, or opt out of tracking entirely:
-
-```
-/claude-usage-reporter:usage-config set usageProject:client:usageEndpoint https://client-backend.example/usage
-/claude-usage-reporter:usage-config set usageProject:client:usageAuthType Bearer
-/claude-usage-reporter:usage-config set usageProject:client:usageAuthToken sk-xxxx
-
-# Fully disable reporting for one project — no terminal report, no push, regardless of global settings
-/claude-usage-reporter:usage-config set usageProject:internal-tool:usageEnabled false
-/claude-usage-reporter:usage-config unset usageProject:internal-tool:usageEnabled
-```
-
-A project with no override uses the settings above unchanged. Overrides are
-stored under `usageProjects` in the config file, keyed by project, and listed
-separately when you run `usage-config` with no arguments.
-
-### Authentication shapes
-
-Endpoints in the wild authenticate differently, so pick the one yours expects:
-
-```jsonc
-// Bearer
-{ "usageAuthType": "Bearer", "usageAuthToken": "sk-xxxx" }
-// → Authorization: Bearer sk-xxxx
-
-// Basic — a "user:pass" value is base64-encoded for you;
-// anything else is passed through as an already-encoded credential
-{ "usageAuthType": "Basic", "usageAuthToken": "user:pass" }
-// → Authorization: Basic dXNlcjpwYXNz
-
-// Single custom header
-{ "usageAuthType": "Header", "usageHeaderName": "X-API-Key", "usageHeaderValue": "sk-xxxx" }
-// → X-API-Key: sk-xxxx
-
-// Split ID + secret
-{ "usageAuthType": "Key Pair",
-  "usageKeyIdHeaderName": "X-API-Key-Id",     "usageKeyIdValue": "id_abc",
-  "usageKeySecretHeaderName": "X-API-Key-Secret", "usageKeySecretValue": "sec_xyz" }
-// → X-API-Key-Id: id_abc
-// → X-API-Key-Secret: sec_xyz
-```
-
-These credentials belong to *your* backend. They are never printed, never logged,
-never included in a payload, and never shown by `/claude-usage-reporter:usage-config` — only the fact
-that a value is set. Even the failure log records the endpoint's host, never the
-full URL, in case yours carries credentials in the userinfo part.
-
----
-
-## How it works
-
-Six hooks, ~750 lines of dependency-free JavaScript:
-
-| Hook | What it does |
-|---|---|
-| `SessionStart` | Shows the first-run notice once; flushes any queued failed pushes. |
-| `UserPromptSubmit` | Catches a turn you cancelled (Esc has no hook of its own): if the transcript shows a completed turn before the one you just typed that never got a `Stop`, it's posted here, marked `interrupted`. Silent otherwise. |
-| `Stop` | Reads the turn's usage out of the transcript Claude Code already wrote, then prints or pushes it. A turn that used more than one model (rare, but possible) is split into one payload per model. |
-| `StopFailure` | Same capture when the turn ends in an API error, with `error: true` on the payload. Still sent if the turn used zero tokens. |
-| `SubagentStop` | Captures token usage from subagents (Task-tool calls), per model, as each one finishes. |
-| `SessionEnd` | Last chance: if the session dies with leftover unreported usage, that usage is posted and marked `interrupted`. A clean session end sends nothing. |
-
-Token counts come from `~/.claude/projects/<project>/<session>.jsonl` — the local
-transcript Claude Code writes for every session. The plugin reads the `usage` block
-Anthropic's API returns on each assistant message, de-duplicates repeated request
-IDs, and sums them per turn.
-
-Because it reads only what Claude Code already stores locally, behaviour is
-identical on a Pro subscription, a Max/Team/Enterprise plan, and a direct API key.
-It never reads your Anthropic credentials, never touches request routing, and never
-branches on your account type.
-
-Files it owns, all mode `0600`, all under `~/.claude/`:
-`claude-usage.json` (settings), `claude-usage-state.json` (first-run flag,
-de-duplication), `claude-usage-queue.jsonl` (failed pushes, capped at 500),
-`claude-usage.log` (delivery failures, capped at 256 KB).
-
----
-
-## Known limitations
-
-- **Esc / interrupt has no hook of its own.** Claude Code fires `StopFailure` for
-  API errors, but not when you cancel a turn. `UserPromptSubmit` catches it as
-  soon as you type the next prompt in the same session, and `SessionEnd` catches
-  it if you don't. Cancelling two turns in a row without ever completing one in
-  between still drops the first — only the turn immediately before the newest
-  prompt is checked.
-- **Failed pushes are dropped after 500 queued records**, oldest first.
-- **Costs are estimates.** See the pricing note above.
-- Pricing lives in `src/pricing.json` and needs updating when Anthropic changes
-  rates or ships a model the table doesn't know. An unknown model simply omits the
-  cost line; token counts are still exact.
-
----
-
-## Troubleshooting
-
-**`claude plugin list` says `✘ failed to load`** — you are on 0.1.0. Update; see
-[CHANGELOG.md](CHANGELOG.md#011--2026-08-28).
-
-**`Unknown command: /usage-config`** — Claude Code namespaces plugin commands. The
-full name is `/claude-usage-reporter:usage-config`. Versions before 0.1.2 printed
-the short form, which never worked.
-
-**Nothing arrives at my endpoint** — run `test-connection`; it reports the status
-and the response body. Failures are also logged to `~/.claude/claude-usage.log`,
-and unsent records wait in `~/.claude/claude-usage-queue.jsonl`.
-
-**No terminal report appears** — with an endpoint configured that is expected:
-`usageDisplay` defaults to `auto`, which prints only while no endpoint is set. Use
-`always` to get both.
-
-**A turn is missing** — work done inside a subagent is excluded (see Known
-limitations). A successful turn that produced no assistant response is not
-reported; an API-error turn is reported even at zero tokens. A cancelled turn
-is only reported if leftover usage is still in the transcript when the session
-ends.
+Versions are tagged in this repository, and [CHANGELOG.md](CHANGELOG.md)
+marks any change to what is captured or where it is sent with 🔍 so you can
+read it before upgrading.
 
 ---
 
@@ -413,12 +319,12 @@ ends.
 
 ```
 npm install
-npm test          # 127 tests, no network, no disk writes outside a temp dir
+npm test          # no network, no disk writes outside a temp dir
 npm run coverage  # enforced at 100% lines / branches / functions / statements
 ```
 
-`src/` holds the logic and is fully covered; `bin/` holds three thin entry points
-that only read stdin and call into `src/`.
+`src/` holds the logic and is fully covered; `bin/` holds thin entry points
+that only read stdin/argv and call into `src/`.
 
 ---
 

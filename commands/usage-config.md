@@ -13,3 +13,8 @@ deliberately. For `set` and `unset`, acknowledge briefly and nothing more: do no
 probe the endpoint, inspect the queue, or diagnose problems the user has not
 asked about. `test-connection` already reports everything needed to diagnose a
 failing endpoint.
+
+If the user wants to push usage for turns that happened while the plugin was
+disabled or the endpoint was unreachable, point them at
+`/claude-usage-reporter:usage-backfill` instead — this command only manages
+settings.

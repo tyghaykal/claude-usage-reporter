@@ -176,6 +176,62 @@ export function extractSubagentUsage(entries, seenCount = 0) {
 }
 
 /**
+ * Every completed turn in a transcript, in order — the backfill counterpart
+ * to `extractTurn` (which only returns the latest one). Each turn carries its
+ * own `timestamp`, taken from its prompt entry, so backfilled records use the
+ * turn's real time instead of "now".
+ */
+export function allTurns(entries) {
+  const prompts = promptEntries(entries);
+  return prompts.map((prompt, i) => {
+    const index = entries.indexOf(prompt);
+    const next = prompts[i + 1];
+    const end = next ? entries.indexOf(next) : entries.length;
+    const turnEntries = entries.slice(index, end).filter((e) => {
+      if (!isAssistant(e)) return false;
+      return prompt.promptId === undefined || e.promptId === undefined || e.promptId === prompt.promptId;
+    });
+    const withModel = turnEntries.filter((e) => e.message.model);
+    return {
+      prompt: textOf(prompt.message.content),
+      tokens: sumUsage(turnEntries),
+      model: withModel.length ? withModel[withModel.length - 1].message.model : '',
+      models: usageByModel(turnEntries),
+      sessionId: prompt.sessionId || '',
+      cwd: prompt.cwd || '',
+      promptId: prompt.promptId || '',
+      timestamp: prompt.timestamp || '',
+    };
+  });
+}
+
+/**
+ * All subagent (sidechain) usage in a transcript, aggregated into one record
+ * per session — like `extractSubagentUsage`'s watermark, but for a whole
+ * historical file instead of "what's new since last time". There's no
+ * reliable per-invocation boundary in the transcript (see module notes
+ * above), so multiple subagent calls in one session are folded into a single
+ * backfill record rather than split like the live `SubagentStop` hook does.
+ * ponytail: one record per session, not per subagent call — split if
+ * per-invocation backfill accuracy ever matters.
+ */
+export function allSubagentUsage(entries) {
+  const assistants = entries.filter(isSidechainAssistant);
+  if (!assistants.length) return null;
+  const promptEntry = entries
+    .filter((e) => e && e.type === 'user' && e.isSidechain && e.message && typeof e.message.content === 'string')
+    .shift();
+  const last = assistants[assistants.length - 1];
+  return {
+    prompt: promptEntry ? textOf(promptEntry.message.content) : '',
+    models: usageByModel(assistants),
+    sessionId: last.sessionId || '',
+    cwd: last.cwd || '',
+    timestamp: last.timestamp || '',
+  };
+}
+
+/**
  * Running totals for the whole session so far.
  * ponytail: re-reads the transcript each turn — O(session) per call, fine for
  * the megabyte-scale files Claude Code writes. Add incremental state if a
