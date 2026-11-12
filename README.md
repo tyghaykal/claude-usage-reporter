@@ -208,8 +208,10 @@ see the exact payload before pointing this at real infrastructure.
 If the plugin was disabled for a while, the endpoint was down, or you just
 added an endpoint and want history alongside it, `/usage-backfill` rebuilds
 usage records from Claude Code's own local transcripts and pushes the ones
-you choose. Preview is the default — it makes no network calls until you add
-`--send`.
+you choose. Preview is the default — one line per session with a title (its
+first prompt), so you can pick by content before anything is sent. It makes
+no network calls until you add `--send`, and `--ignore` lets you set aside
+sessions you never want backfilled.
 
 ```
 /claude-usage-reporter:usage-backfill --since 2026-09-01

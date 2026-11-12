@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { COMMAND, loadConfig, statePath } from './config.mjs';
-import { collectRecords, formatList, formatPreview, markReported, sendRecords } from './backfill.mjs';
+import { collectRecords, formatList, formatPreview, formatSessions, markReported, sendRecords, setSessionsIgnored } from './backfill.mjs';
 import { postUsage } from './sender.mjs';
 import { fsDefaults, readJson } from './store.mjs';
 
@@ -15,12 +15,16 @@ const USAGE = [
   '  /usage-backfill [--since DATE] [--until DATE] [--project NAME]... [--session ID]...',
   '                  [--turn KEY]... [--include-disabled] [--list] [--send] [--yes] [--force]',
   '',
-  '  Without --send: preview only, grouped by project then session. No network calls.',
+  '  Without --send: preview only — one line per session, with a title (its first prompt). No network calls.',
+  '  --totals           preview as project/session totals instead (no titles)',
   '  --list             preview as one line per turn, with its key — use this to find --turn values',
   '  --turn KEY         repeatable; only these exact turns, by the key --list prints ("sessionId:promptId")',
   '  --send             push the selected records — sending starts immediately, no confirmation prompt',
+  '  --ignore           instead of sending, mark the selected --session(s) as ignored — skipped by default from now on',
+  '  --unignore         un-mark the selected --session(s) as ignored',
   '  --yes              accepted for backwards compatibility; has no effect (--send alone is enough)',
   '  --force            resend turns already recorded as backfilled',
+  '  --include-ignored  also include sessions previously marked --ignore',
   '  --since / --until  ISO date or datetime; a bare date is local time, --until includes the whole day',
   '  --project NAME     repeatable; only these projects',
   '  --session ID       repeatable; only these session ids',
@@ -29,7 +33,7 @@ const USAGE = [
 
 function parseArgs(argv) {
   const options = { projects: [], sessions: [], turns: [] };
-  const flags = { send: false, yes: false, force: false, list: false };
+  const flags = { send: false, yes: false, force: false, list: false, totals: false, ignore: false, unignore: false, includeIgnored: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--since') options.since = argv[++i];
@@ -38,8 +42,12 @@ function parseArgs(argv) {
     else if (arg === '--session') options.sessions.push(argv[++i]);
     else if (arg === '--turn') options.turns.push(argv[++i]);
     else if (arg === '--include-disabled') options.includeDisabled = true;
+    else if (arg === '--include-ignored') flags.includeIgnored = true;
     else if (arg === '--list') flags.list = true;
+    else if (arg === '--totals') flags.totals = true;
     else if (arg === '--send') flags.send = true;
+    else if (arg === '--ignore') flags.ignore = true;
+    else if (arg === '--unignore') flags.unignore = true;
     else if (arg === '--yes') flags.yes = true;
     else if (arg === '--force') flags.force = true;
     else if (arg === '--help' || arg === '-h') return { help: true };
@@ -73,8 +81,16 @@ export async function runBackfillCli(argv, {
   }
   records = markReported(records, env, fs);
 
+  if (flags.ignore || flags.unignore) {
+    if (!options.sessions.length) return { text: 'Error: --ignore/--unignore needs at least one --session.', code: 1 };
+    setSessionsIgnored(options.sessions, flags.ignore, env, fs);
+    return { text: `${flags.ignore ? 'Ignored' : 'Un-ignored'}: ${options.sessions.join(', ')}`, code: 0 };
+  }
+
+  if (!flags.includeIgnored) records = records.filter((r) => r.skip || !r.ignored);
+
   if (!flags.send) {
-    return { text: flags.list ? formatList(records) : formatPreview(records), code: 0 };
+    return { text: flags.list ? formatList(records) : flags.totals ? formatPreview(records) : formatSessions(records), code: 0 };
   }
 
   const { config } = loadConfig({ env, readFile });

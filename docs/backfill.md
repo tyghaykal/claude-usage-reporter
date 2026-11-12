@@ -24,13 +24,14 @@ backfill can see them — there's nothing to recover past that window.
 ```
 
 ```
-my-repo:
-  abc-123  turns: 14  tokens: 82,410  already reported: 0/14
-  def-456  turns: 3   tokens: 9,220   already reported: 0/3
-
-Skipped (no timestamp): 0
-Skipped (zero tokens): 2
+abc-123  my-repo  turns: 14  tokens: 82,410  "fix the flaky retry test"
+def-456  my-repo  turns: 3   tokens: 9,220   "add usage-backfill docs"  [already reported]
 ```
+
+The default preview is one line per session with a title (its first
+prompt, truncated) — enough to recognize a session without reading full
+transcripts. Use `--totals` instead for the old project/session rollup
+without titles.
 
 **2. When it looks right, send it:**
 
@@ -64,10 +65,34 @@ the main [README](../README.md#how-it-works).
 | `--session ID` | yes | Only these session ids |
 | `--turn KEY` | yes | Only these exact turns — see *Picking individual turns* below |
 | `--include-disabled` | no | Also include projects with `usageEnabled: false` |
-| `--list` | no | Preview as one line per turn, with its key, instead of the grouped summary |
+| `--include-ignored` | no | Also include sessions previously marked `--ignore` |
+| `--totals` | no | Preview as project/session totals instead of the default per-session list |
+| `--list` | no | Preview as one line per turn, with its key, instead of the default per-session list |
 | `--send` | no | Push immediately — no confirmation prompt (default is preview only) |
+| `--ignore` | no | Instead of sending, mark the given `--session`(s) as ignored — skipped by default from now on |
+| `--unignore` | no | Un-mark the given `--session`(s) as ignored |
 | `--yes` | no | Accepted for backwards compatibility; has no effect (`--send` alone is enough) |
 | `--force` | no | Resend turns already recorded as backfilled |
+
+## Picking sessions interactively
+
+The default preview already shows enough to choose by content — read the
+titles, then narrow to the sessions you want:
+
+```
+/claude-usage-reporter:usage-backfill --session abc-123 --send
+```
+
+To set aside sessions you never want backfilled (test runs, noise, etc.)
+without touching your actual Claude Code logs:
+
+```
+/claude-usage-reporter:usage-backfill --session xyz-789 --ignore
+```
+
+An ignored session is skipped by every preview and `--send` until you run
+`--unignore` on it. This only writes to backfill's own state file — it never
+deletes a transcript or any of Claude Code's own session history.
 
 ## Picking individual turns
 

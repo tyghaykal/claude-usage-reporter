@@ -73,6 +73,52 @@ test('--list shows one line per turn with its key, and --turn narrows to exactly
   assert.match(narrowed.text, /turns: 1/);
 });
 
+test('default preview shows one line per session with a title from its first prompt', async () => {
+  const PROJECTS = `${HOME}/projects`;
+  const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'fix the backfill bug' } };
+  const assistant = { type: 'assistant', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', requestId: 'r1', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
+  const jsonl = [entry, assistant].map((e) => JSON.stringify(e)).join('\n');
+  const files = { [`${PROJECTS}/repo/s1.jsonl`]: jsonl };
+  const listFs = fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] });
+
+  const { text, code } = await runBackfillCli([], { env: baseEnv(), readFile: fakeReader(files), fs: fakeFs(files), exists: () => false, listFs });
+  assert.equal(code, 0);
+  assert.match(text, /s1/);
+  assert.match(text, /fix the backfill bug/);
+});
+
+test('--totals shows project/session totals without titles', async () => {
+  const { text, code } = await runBackfillCli(['--totals'], { env: baseEnv(), readFile: fakeReader({}), fs: fakeFs() });
+  assert.equal(code, 0);
+  assert.match(text, /No matching turns found\./);
+});
+
+test('--ignore marks a session as skipped by default, --unignore reverses it', async () => {
+  const PROJECTS = `${HOME}/projects`;
+  const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'hi' } };
+  const assistant = { type: 'assistant', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', requestId: 'r1', message: { model: 'x', usage: { input_tokens: 1, output_tokens: 1 } } };
+  const jsonl = [entry, assistant].map((e) => JSON.stringify(e)).join('\n');
+  const files = { [`${PROJECTS}/repo/s1.jsonl`]: jsonl };
+  const listFs = fakeListFs({ [PROJECTS]: ['repo'], [`${PROJECTS}/repo`]: ['s1.jsonl'] });
+  const fs = fakeFs(files);
+
+  const ignore = await runBackfillCli(['--session', 's1', '--ignore'], { env: baseEnv(), readFile: fakeReader(files), fs, exists: () => false, listFs });
+  assert.equal(ignore.code, 0);
+  assert.match(ignore.text, /Ignored: s1/);
+
+  const preview = await runBackfillCli([], { env: baseEnv(), readFile: fakeReader(files), fs, exists: () => false, listFs });
+  assert.match(preview.text, /No matching turns found\./);
+
+  const includeIgnored = await runBackfillCli(['--include-ignored'], { env: baseEnv(), readFile: fakeReader(files), fs, exists: () => false, listFs });
+  assert.match(includeIgnored.text, /s1/);
+
+  const unignore = await runBackfillCli(['--session', 's1', '--unignore'], { env: baseEnv(), readFile: fakeReader(files), fs, exists: () => false, listFs });
+  assert.match(unignore.text, /Un-ignored: s1/);
+
+  const restored = await runBackfillCli([], { env: baseEnv(), readFile: fakeReader(files), fs, exists: () => false, listFs });
+  assert.match(restored.text, /s1/);
+});
+
 test('--send alone (no --yes) sends immediately — no confirmation needed', async () => {
   const PROJECTS = `${HOME}/projects`;
   const entry = { type: 'user', promptSource: 'typed', promptId: 'p1', sessionId: 's1', cwd: '/repo', timestamp: '2026-09-01T00:00:00Z', message: { content: 'hi' } };

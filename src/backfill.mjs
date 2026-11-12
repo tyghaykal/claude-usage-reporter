@@ -171,7 +171,48 @@ export function collectRecords(options = {}, deps = {}) {
 export function markReported(records, env = process.env, fs = fsDefaults) {
   const state = readJson(backfillStatePath(env), fs);
   const reported = state.reported || {};
-  return records.map((record) => (record.skip ? record : { ...record, alreadyReported: Boolean(reported[record.key]) }));
+  const ignored = state.ignoredSessions || {};
+  return records.map((record) =>
+    record.skip
+      ? record
+      : { ...record, alreadyReported: Boolean(reported[record.key]), ignored: Boolean(ignored[record.sessionId]) },
+  );
+}
+
+/** Marks (or unmarks) whole sessions as ignored, so they're skipped by preview/list/send until unignored. */
+export function setSessionsIgnored(sessionIds, ignored, env = process.env, fs = fsDefaults) {
+  const state = readJson(backfillStatePath(env), fs);
+  const ignoredSessions = { ...(state.ignoredSessions || {}) };
+  for (const id of sessionIds) {
+    if (ignored) ignoredSessions[id] = true;
+    else delete ignoredSessions[id];
+  }
+  writeJson(backfillStatePath(env), { ...state, ignoredSessions }, fs);
+}
+
+/**
+ * One line per session — a title (its first turn's prompt, truncated), turn
+ * count, tokens, and reported/ignored status. Lets you pick `--session` ids
+ * to send or `--ignore` without reading full prompt text for every turn.
+ */
+export function formatSessions(records) {
+  const bySession = new Map();
+  for (const record of records) {
+    if (record.skip) continue;
+    if (!bySession.has(record.sessionId)) bySession.set(record.sessionId, []);
+    bySession.get(record.sessionId).push(record);
+  }
+  if (bySession.size === 0) return 'No matching turns found.';
+  const lines = [];
+  for (const [sessionId, recs] of bySession) {
+    const title = (recs[0].prompt || '').split('\n')[0].trim().slice(0, 70) || '(no prompt text)';
+    const turns = new Set(recs.map((r) => r.promptId)).size;
+    const tokens = recs.reduce((sum, r) => sum + r.tokens.total, 0);
+    const reported = recs.filter((r) => r.alreadyReported).length;
+    const status = recs[0].ignored ? '  [ignored]' : reported === recs.length ? '  [already reported]' : '';
+    lines.push(`${sessionId}  ${recs[0].project}  turns: ${turns}  tokens: ${tokens.toLocaleString('en-US')}  "${title}"${status}`);
+  }
+  return lines.join('\n');
 }
 
 /** Groups sendable records by project then session for the preview table. */
