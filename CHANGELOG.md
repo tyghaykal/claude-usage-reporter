@@ -6,6 +6,16 @@ see them before upgrading.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-11-12
+
+### Added
+- `/usage-backfill`'s default preview now lists one line per session with a
+  title (its first prompt, truncated), so sessions can be picked by content
+  instead of id. `--totals` keeps the previous project/session rollup.
+- `--ignore`/`--unignore --session ID`: mark sessions to skip from every
+  future preview and `--send` without touching transcripts or Claude Code's
+  own session history. `--include-ignored` overrides it for one run.
+
 ## [0.4.2] — 2026-09-29
 
 ### Changed
